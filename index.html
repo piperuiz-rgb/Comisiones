@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Comisiones de Showrooms | Charo Ruiz Ibiza</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div>
+                <div class="logo-text"><span class="logo-accent">◆</span> Charo Ruiz Ibiza</div>
+                <div class="header-subtitle">Sistema de Comisiones de Showrooms</div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <h1>Gestión de Comisiones</h1>
+        <p class="subtitle">Control completo de pedidos, facturas y comisiones de showrooms</p>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="nav-tab" onclick="switchTab('showrooms')">🏢 Showrooms</button>
+            <button class="nav-tab" onclick="switchTab('clientes')">👥 Clientes</button>
+            <button class="nav-tab" onclick="switchTab('pedidos')">📦 Pedidos</button>
+            <button class="nav-tab" onclick="switchTab('facturas')">📄 Facturas</button>
+            <button class="nav-tab" onclick="switchTab('cobros')">💰 Cobros</button>
+            <button class="nav-tab" onclick="switchTab('informes')">📈 Informes</button>
+            <button class="nav-tab" onclick="switchTab('historico')">📜 Histórico Informes</button>
+        </div>
+
+        <!-- TAB: DASHBOARD -->
+        <div id="tab-dashboard" class="tab-content active">
+            <div class="stats-grid" id="statsGrid"></div>
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">⚠️</div>
+                        <div class="card-title">Facturas Pendientes de Cobro</div>
+                    </div>
+                </div>
+                <div id="facturasPendientesContainer"></div>
+            </div>
+        </div>
+
+        <!-- TAB: SHOWROOMS -->
+        <div id="tab-showrooms" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">🏢</div>
+                        <div class="card-title">Showrooms</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalShowroom()">
+                            <span>+</span>
+                            <span>Nuevo Showroom</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportarShowrooms()">
+                            <span>↓</span>
+                            <span>Exportar</span>
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importShowroomsInput').click()">
+                            <span>↑</span>
+                            <span>Importar</span>
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="importShowroomsInput" accept=".xlsx,.csv" style="display:none">
+                <div class="alert alert-info" id="showroomsAlert"></div>
+                <div class="table-container" id="showroomsTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: CLIENTES -->
+        <div id="tab-clientes" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">👥</div>
+                        <div class="card-title">Clientes</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalCliente()">
+                            <span>+</span>
+                            <span>Nuevo Cliente</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportarClientes()">
+                            <span>↓</span>
+                            <span>Exportar</span>
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importClientesInput').click()">
+                            <span>↑</span>
+                            <span>Importar</span>
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="importClientesInput" accept=".xlsx,.csv" style="display:none">
+                <div class="alert alert-info" id="clientesAlert"></div>
+                <div class="table-container" id="clientesTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: PEDIDOS -->
+        <div id="tab-pedidos" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">📦</div>
+                        <div class="card-title">Pedidos</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalPedido()">
+                            <span>+</span>
+                            <span>Nuevo Pedido</span>
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">
+                            <span>↑</span>
+                            <span>Importar</span>
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="importPedidosInput" accept=".xlsx,.csv" style="display:none">
+                <div class="alert alert-info" id="pedidosAlert"></div>
+                <div class="table-container" id="pedidosTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: FACTURAS -->
+        <div id="tab-facturas" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">📄</div>
+                        <div class="card-title">Facturas</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalFactura()">
+                            <span>+</span>
+                            <span>Nueva Factura</span>
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importFacturasInput').click()">
+                            <span>↑</span>
+                            <span>Importar</span>
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="importFacturasInput" accept=".xlsx,.csv" style="display:none">
+                <div class="alert alert-info" id="facturasAlert"></div>
+                <div class="table-container" id="facturasTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: COBROS -->
+        <div id="tab-cobros" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">💰</div>
+                        <div class="card-title">Cobros</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalCobro()">
+                            <span>+</span>
+                            <span>Nuevo Cobro</span>
+                        </button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importCobrosInput').click()">
+                            <span>↑</span>
+                            <span>Importar</span>
+                        </button>
+                    </div>
+                </div>
+                <input type="file" id="importCobrosInput" accept=".xlsx,.csv" style="display:none">
+                <div class="alert alert-info" id="cobrosAlert"></div>
+                <div class="table-container" id="cobrosTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: INFORMES -->
+        <div id="tab-informes" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">📈</div>
+                        <div class="card-title">Generar Informe de Comisiones</div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="infFechaInicio">Fecha Inicio (fecha cobro)</label>
+                        <input type="date" id="infFechaInicio">
+                    </div>
+                    <div class="form-group">
+                        <label for="infFechaFin">Fecha Fin (fecha cobro)</label>
+                        <input type="date" id="infFechaFin">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="infShowroom">Showroom (Opcional)</label>
+                    <select id="infShowroom">
+                        <option value="">Todos los showrooms</option>
+                    </select>
+                </div>
+
+                <button class="btn btn-primary" onclick="generarInforme()">
+                    <span>📊</span>
+                    <span>Generar Informe Excel</span>
+                </button>
+
+                <div id="infPreview" class="table-container" style="display:none; margin-top:24px"></div>
+            </div>
+        </div>
+
+        <!-- TAB: HISTÓRICO INFORMES -->
+        <div id="tab-historico" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">📜</div>
+                        <div class="card-title">Histórico de Informes</div>
+                    </div>
+                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar histórico">
+                        🗑️
+                    </button>
+                </div>
+
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <input type="text" id="buscarHistorico" placeholder="🔍 Buscar en histórico..." style="flex: 1; min-width: 200px;">
+                    <select id="filtroShowroomHistorico" style="min-width: 200px;">
+                        <option value="">Todos los showrooms</option>
+                    </select>
+                </div>
+
+                <div id="historicoInformesContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALES -->
+    
+    <!-- Modal Showroom -->
+    <div id="modalShowroom" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalShowroomTitle">Nuevo Showroom</h3>
+                <button class="modal-close" onclick="cerrarModal('modalShowroom')">×</button>
+            </div>
+            <div class="form-group">
+                <label for="showNombre">Nombre del Showroom *</label>
+                <input type="text" id="showNombre" required>
+            </div>
+            <div class="form-group">
+                <label for="showComision">% Comisión *</label>
+                <input type="number" id="showComision" step="0.01" min="0" max="100" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalShowroom')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarShowroom()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Cliente -->
+    <div id="modalCliente" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalClienteTitle">Nuevo Cliente</h3>
+                <button class="modal-close" onclick="cerrarModal('modalCliente')">×</button>
+            </div>
+            <div class="form-group">
+                <label for="cliNombre">Nombre del Cliente *</label>
+                <input type="text" id="cliNombre" required>
+            </div>
+            <div class="form-group">
+                <label for="cliShowroom">Showroom Asignado *</label>
+                <select id="cliShowroom" required>
+                    <option value="">Seleccionar showroom...</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalCliente')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarCliente()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Pedido -->
+    <div id="modalPedido" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalPedidoTitle">Nuevo Pedido</h3>
+                <button class="modal-close" onclick="cerrarModal('modalPedido')">×</button>
+            </div>
+            <div class="form-group">
+                <label for="pedNumero">Número de Pedido *</label>
+                <input type="text" id="pedNumero" required>
+            </div>
+            <div class="form-group">
+                <label for="pedCliente">Cliente *</label>
+                <select id="pedCliente" required>
+                    <option value="">Seleccionar cliente...</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pedFecha">Fecha *</label>
+                    <input type="date" id="pedFecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="pedMoneda">Moneda *</label>
+                    <select id="pedMoneda" required>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="USD">USD ($)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="pedImporte">Importe *</label>
+                <input type="number" id="pedImporte" step="0.01" min="0" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalPedido')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarPedido()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Factura -->
+    <div id="modalFactura" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalFacturaTitle">Nueva Factura</h3>
+                <button class="modal-close" onclick="cerrarModal('modalFactura')">×</button>
+            </div>
+            <div class="form-group">
+                <label for="facNumero">Número de Factura *</label>
+                <input type="text" id="facNumero" required>
+            </div>
+            <div class="form-group">
+                <label for="facCliente">Cliente *</label>
+                <select id="facCliente" required onchange="cargarPedidosCliente()">
+                    <option value="">Seleccionar cliente...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="facPedidos">Pedido(s) Origen (separados por comas)</label>
+                <input type="text" id="facPedidos" placeholder="Ej: PED001, PED002">
+                <small style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
+                    Pedidos del cliente: <span id="pedidosDisponibles">-</span>
+                </small>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="facFecha">Fecha Emisión *</label>
+                    <input type="date" id="facFecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="facVencimiento">Fecha Vencimiento *</label>
+                    <input type="date" id="facVencimiento" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="facMoneda">Moneda *</label>
+                    <select id="facMoneda" required>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="USD">USD ($)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="facImporte">Importe *</label>
+                    <input type="number" id="facImporte" step="0.01" min="0" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalFactura')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarFactura()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Cobro -->
+    <div id="modalCobro" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalCobroTitle">Nuevo Cobro</h3>
+                <button class="modal-close" onclick="cerrarModal('modalCobro')">×</button>
+            </div>
+            <div class="form-group">
+                <label for="cobFactura">Factura *</label>
+                <select id="cobFactura" required onchange="mostrarInfoFactura()">
+                    <option value="">Seleccionar factura...</option>
+                </select>
+            </div>
+            <div id="infoFactura" class="info-box" style="display:none;">
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Importe total:</span>
+                    <strong id="infFactTotal">0,00 €</strong>
+                </div>
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Ya cobrado:</span>
+                    <strong id="infFactCobrado">0,00 €</strong>
+                </div>
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Pendiente:</span>
+                    <strong id="infFactPendiente" style="color: var(--warning);">0,00 €</strong>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="cobFecha">Fecha de Cobro *</label>
+                    <input type="date" id="cobFecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="cobMoneda">Moneda *</label>
+                    <select id="cobMoneda" required>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="USD">USD ($)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="cobImporte">Importe *</label>
+                <input type="number" id="cobImporte" step="0.01" min="0" required>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalCobro')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarCobro()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmación Saldo Residual -->
+    <div id="modalSaldoResidual" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">⚠️ Saldo Residual Detectado</h3>
+                <button class="modal-close" onclick="cerrarModal('modalSaldoResidual')">×</button>
+            </div>
+            <p style="margin-bottom: 24px; color: var(--gray-700);" id="mensajeSaldoResidual"></p>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalSaldoResidual')">Dejar Pendiente</button>
+                <button class="btn btn-primary" onclick="marcarComoCompleto()">Marcar como Pagada al 100%</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="footer-logo">Charo Ruiz Ibiza</div>
+        <p>Sistema de Comisiones de Showrooms v1.0</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
