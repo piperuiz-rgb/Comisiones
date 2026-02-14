@@ -120,23 +120,94 @@ function switchTab(tabName) {
     if (tabName === 'historico') cargarHistoricoInformes();
 }
 
+function calcularTotalAbonos(factura, todasFacturas) {
+    if (!todasFacturas) todasFacturas = DB.getFacturas();
+    const abonos = todasFacturas.filter(f => f.esAbono && f.facturasAbonadas);
+    let total = 0;
+
+    abonos.forEach(abono => {
+        const refs = abono.facturasAbonadas.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if (!refs.includes(factura.numero.toLowerCase())) return;
+
+        if (refs.length === 1) {
+            total += Math.abs(abono.importe);
+        } else {
+            // Reparto proporcional entre las facturas referenciadas
+            const facturasRef = refs.map(r => todasFacturas.find(f => f.numero.toLowerCase() === r && !f.esAbono)).filter(Boolean);
+            const importeTotal = facturasRef.reduce((sum, f) => sum + Math.abs(f.importe), 0);
+            if (importeTotal > 0) {
+                total += Math.abs(abono.importe) * (factura.importe / importeTotal);
+            }
+        }
+    });
+
+    return total;
+}
+
 function calcularEstadoFactura(facturaId) {
-    const factura = DB.getFacturas().find(f => f.id === facturaId);
+    const facturas = DB.getFacturas();
+    const factura = facturas.find(f => f.id === facturaId);
     if (!factura) return { estado: 'pendiente', cobrado: 0, pendiente: 0, porcentaje: 0 };
 
+    // Para abonos: su estado depende de si las facturas referenciadas están saldadas
+    if (factura.esAbono) {
+        const refsStr = factura.facturasAbonadas || '';
+        const refs = refsStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if (refs.length === 0) {
+            return { estado: 'pendiente', cobrado: 0, pendiente: Math.abs(factura.importe), porcentaje: 0 };
+        }
+
+        const todasCobradas = refs.every(ref => {
+            const facturaRef = facturas.find(f => f.numero.toLowerCase() === ref && !f.esAbono);
+            if (!facturaRef) return true;
+            const cobrosRef = DB.getCobros().filter(c => c.facturaId === facturaRef.id);
+            const totalCobros = cobrosRef.reduce((sum, c) => sum + c.importe, 0);
+            const totalAbonos = calcularTotalAbonos(facturaRef, facturas);
+            return (totalCobros + totalAbonos) >= facturaRef.importe;
+        });
+
+        // Comprobar también si las facturas ya estaban saldadas antes del abono (escenario 3)
+        const yaEstabaSaldada = refs.every(ref => {
+            const facturaRef = facturas.find(f => f.numero.toLowerCase() === ref && !f.esAbono);
+            if (!facturaRef) return true;
+            const cobrosRef = DB.getCobros().filter(c => c.facturaId === facturaRef.id)
+                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+            let acum = 0;
+            for (const cobro of cobrosRef) {
+                acum += cobro.importe;
+                if (acum >= facturaRef.importe) {
+                    return new Date(cobro.fecha) < new Date(factura.fecha);
+                }
+            }
+            return false;
+        });
+
+        const saldado = todasCobradas || yaEstabaSaldada;
+        return {
+            estado: saldado ? 'cobrada' : 'pendiente',
+            cobrado: saldado ? Math.abs(factura.importe) : 0,
+            pendiente: saldado ? 0 : Math.abs(factura.importe),
+            porcentaje: saldado ? 100 : 0
+        };
+    }
+
+    // Para facturas normales: cobros + abonos
     const cobros = DB.getCobros().filter(c => c.facturaId === facturaId);
     const totalCobrado = cobros.reduce((sum, c) => sum + c.importe, 0);
-    const pendiente = factura.importe - totalCobrado;
-    const porcentaje = factura.importe > 0 ? Math.min(100, (totalCobrado / factura.importe) * 100) : 0;
+    const totalAbonos = calcularTotalAbonos(factura, facturas);
+    const totalSaldado = totalCobrado + totalAbonos;
+
+    const pendiente = factura.importe - totalSaldado;
+    const porcentaje = factura.importe > 0 ? Math.min(100, (totalSaldado / factura.importe) * 100) : 0;
 
     let estado = 'pendiente';
-    if (totalCobrado >= factura.importe) {
+    if (totalSaldado >= factura.importe) {
         estado = 'cobrada';
-    } else if (totalCobrado > 0) {
+    } else if (totalSaldado > 0) {
         estado = 'parcial';
     }
 
-    return { estado, cobrado: totalCobrado, pendiente: Math.max(0, pendiente), porcentaje };
+    return { estado, cobrado: totalSaldado, pendiente: Math.max(0, pendiente), porcentaje };
 }
 
 function calcularEstadoPedido(pedidoId) {
@@ -1591,7 +1662,7 @@ function importarPedidos(file) {
 function modalFactura(id = null) {
     const modal = document.getElementById('modalFactura');
     const title = document.getElementById('modalFacturaTitle');
-    
+
     // Cargar clientes en select
     const clientes = DB.getClientes();
     const selectCliente = document.getElementById('facCliente');
@@ -1599,34 +1670,40 @@ function modalFactura(id = null) {
     clientes.forEach(c => {
         selectCliente.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
     });
-    
+
     if (id) {
         const facturas = DB.getFacturas();
         const factura = facturas.find(f => f.id === id);
-        title.textContent = 'Editar Factura';
+        title.textContent = factura.esAbono ? 'Editar Abono' : 'Editar Factura';
         document.getElementById('facNumero').value = factura.numero;
         document.getElementById('facCliente').value = factura.clienteId;
         document.getElementById('facPedidos').value = factura.pedidos || '';
+        document.getElementById('facFacturasAbonadas').value = factura.facturasAbonadas || '';
         document.getElementById('facFecha').value = factura.fecha;
         document.getElementById('facVencimiento').value = factura.vencimiento;
         document.getElementById('facMoneda').value = factura.moneda;
-        document.getElementById('facImporte').value = factura.importe;
+        document.getElementById('facImporte').value = factura.esAbono ? Math.abs(factura.importe) : factura.importe;
+        cambiarTipoFactura(factura.esAbono ? 'abono' : 'factura');
         cargarPedidosCliente();
+        cargarFacturasAbonables();
         editandoId = id;
     } else {
         title.textContent = 'Nueva Factura';
         document.getElementById('facNumero').value = '';
         document.getElementById('facCliente').value = '';
         document.getElementById('facPedidos').value = '';
+        document.getElementById('facFacturasAbonadas').value = '';
         document.getElementById('facFecha').valueAsDate = new Date();
         const venc = new Date();
         venc.setDate(venc.getDate() + 30);
         document.getElementById('facVencimiento').valueAsDate = venc;
         document.getElementById('facMoneda').value = 'EUR';
         document.getElementById('facImporte').value = '';
+        cambiarTipoFactura('factura');
         document.getElementById('pedidosCheckboxes').innerHTML = '';
         document.getElementById('pedidosDisponiblesInfo').textContent = 'Selecciona un cliente para ver sus pedidos';
         document.getElementById('pedidosDisponiblesInfo').style.display = '';
+        document.getElementById('facturasAbonablesCheckboxes').innerHTML = '';
         editandoId = null;
     }
 
@@ -1697,14 +1774,26 @@ function guardarFactura() {
     const numero = document.getElementById('facNumero').value.trim();
     const clienteId = document.getElementById('facCliente').value;
     const pedidosStr = document.getElementById('facPedidos').value.trim();
+    const facturasAbonadasStr = document.getElementById('facFacturasAbonadas').value.trim();
     const fecha = document.getElementById('facFecha').value;
     const vencimiento = document.getElementById('facVencimiento').value;
     const moneda = document.getElementById('facMoneda').value;
-    const importe = parseFloat(document.getElementById('facImporte').value);
+    let importe = parseFloat(document.getElementById('facImporte').value);
+    const esAbono = tipoFacturaModal === 'abono';
 
     if (!numero || !clienteId || !fecha || !vencimiento || isNaN(importe)) {
         alert('Por favor completa todos los campos obligatorios');
         return;
+    }
+
+    if (esAbono && !facturasAbonadasStr) {
+        alert('Selecciona al menos una factura que este abono rectifica');
+        return;
+    }
+
+    // Los abonos se guardan con importe negativo
+    if (esAbono && importe > 0) {
+        importe = -importe;
     }
 
     const facturas = DB.getFacturas();
@@ -1713,22 +1802,26 @@ function guardarFactura() {
     if (editandoId) {
         facturaId = editandoId;
         const index = facturas.findIndex(f => f.id === editandoId);
-        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, fecha, vencimiento, moneda, importe };
+        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, facturasAbonadas: facturasAbonadasStr, fecha, vencimiento, moneda, importe, esAbono };
     } else {
         facturaId = generarId();
         facturas.push({
             id: facturaId,
             numero, clienteId,
             pedidos: pedidosStr,
+            facturasAbonadas: facturasAbonadasStr,
             fecha, vencimiento, moneda, importe,
+            esAbono,
             fechaCreacion: new Date().toISOString()
         });
     }
 
     DB.setFacturas(facturas);
 
-    // Transferir anticipos de pedidos a esta factura
-    if (pedidosStr) {
+    const tipoDoc = esAbono ? 'Abono' : 'Factura';
+
+    // Transferir anticipos de pedidos a esta factura (solo facturas normales)
+    if (!esAbono && pedidosStr) {
         const pedidosDB = DB.getPedidos();
         const refs = pedidosStr.split(',').map(s => s.trim().toLowerCase());
         const cobros = DB.getCobros();
@@ -1737,8 +1830,6 @@ function guardarFactura() {
         refs.forEach(ref => {
             const pedido = pedidosDB.find(p => p.numero.toLowerCase() === ref);
             if (!pedido) return;
-
-            // Buscar cobros sobre este pedido que aún no estén transferidos a una factura
             cobros.forEach(cobro => {
                 if (cobro.pedidoId === pedido.id && !cobro.facturaId) {
                     cobro.facturaId = facturaId;
@@ -1749,12 +1840,12 @@ function guardarFactura() {
 
         if (transferidos > 0) {
             DB.setCobros(cobros);
-            showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'}. ${transferidos} anticipo(s) transferido(s) desde pedido(s).`, 'success');
+            showAlert('facturasAlert', `${tipoDoc} ${editandoId ? 'actualizada' : 'creada'}. ${transferidos} anticipo(s) transferido(s).`, 'success');
         } else {
-            showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'} correctamente`, 'success');
+            showAlert('facturasAlert', `${tipoDoc} ${editandoId ? 'actualizado' : 'creado'} correctamente`, 'success');
         }
     } else {
-        showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'} correctamente`, 'success');
+        showAlert('facturasAlert', `${tipoDoc} ${editandoId ? 'actualizado' : 'creado'} correctamente`, 'success');
     }
 
     cerrarModal('modalFactura');
@@ -1810,6 +1901,7 @@ function cargarTablaFacturas() {
             <tr data-cliente="${factura.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-estado="${estadoTexto}" data-numero="${factura.numero.toLowerCase()}">
                 <td>
                     <strong>${factura.numero}</strong>
+                    ${factura.esAbono ? ' <span class="badge badge-danger" style="font-size: 10px;">ABONO</span>' : ''}
                     ${cobrosFactura.length > 0 ? `<button class="btn btn-secondary btn-icon" onclick="toggleDetalleCobros('${factura.id}')" style="margin-left: 8px;">👁️</button>` : ''}
                 </td>
                 <td>${cliente ? cliente.nombre : '-'}</td>
@@ -1940,7 +2032,7 @@ function importarFacturas(file) {
             const sinPedido = []; // Facturas importadas sin pedido asociado
             const sinCliente = []; // Filas sin cliente encontrado
 
-            // Formato: Número | Cliente | Pedidos | Fecha | Vencimiento | Moneda | Importe
+            // Formato: Número | Cliente | Pedidos | Fecha | Vencimiento | Moneda | Importe | FacturasAbonadas (opcional)
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row[0]) continue;
@@ -1954,17 +2046,28 @@ function importarFacturas(file) {
                 }
 
                 const pedidosStr = String(row[2] || '').trim();
+                const facturasAbonadasStr = String(row[7] || '').trim();
+                let importe = parseFloat(row[6]) || 0;
+                const esAbono = facturasAbonadasStr.length > 0;
+
+                // Los abonos se guardan con importe negativo
+                if (esAbono && importe > 0) {
+                    importe = -importe;
+                }
+
                 const facturaId = generarId();
 
                 facturas.push({
                     id: facturaId,
                     numero: String(row[0]),
                     clienteId: cliente.id,
-                    pedidos: pedidosStr,
+                    pedidos: esAbono ? '' : pedidosStr,
+                    facturasAbonadas: facturasAbonadasStr,
                     fecha: row[3] || new Date().toISOString().split('T')[0],
                     vencimiento: row[4] || new Date().toISOString().split('T')[0],
                     moneda: String(row[5] || 'EUR'),
-                    importe: parseFloat(row[6]) || 0,
+                    importe,
+                    esAbono,
                     fechaCreacion: new Date().toISOString()
                 });
                 importados++;
@@ -2091,6 +2194,91 @@ function guardarAsociacionesPedidos(total) {
     }
 }
 
+
+// ========================================
+// COBROS - CRUD
+// ========================================
+
+// ========================================
+// ABONOS / RECTIFICATIVAS
+// ========================================
+
+var tipoFacturaModal = 'factura'; // 'factura' o 'abono'
+
+function cambiarTipoFactura(tipo) {
+    tipoFacturaModal = tipo;
+    document.getElementById('facTipoFactura').className = tipo === 'factura' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('facTipoAbono').className = tipo === 'abono' ? 'btn btn-danger' : 'btn btn-secondary';
+    document.getElementById('facPedidosGroup').style.display = tipo === 'factura' ? '' : 'none';
+    document.getElementById('facAbonoGroup').style.display = tipo === 'abono' ? '' : 'none';
+    document.getElementById('facImporteHelp').style.display = tipo === 'abono' ? '' : 'none';
+    document.getElementById('facImporteLabel').textContent = tipo === 'abono' ? 'Importe del abono *' : 'Importe *';
+
+    if (tipo === 'abono') {
+        cargarFacturasAbonables();
+    }
+}
+
+function cargarFacturasAbonables() {
+    const clienteId = document.getElementById('facCliente').value;
+    const container = document.getElementById('facturasAbonablesCheckboxes');
+    const info = document.getElementById('facturasAbonablesInfo');
+    const hiddenInput = document.getElementById('facFacturasAbonadas');
+
+    if (tipoFacturaModal !== 'abono') return;
+
+    if (!clienteId) {
+        container.innerHTML = '';
+        info.textContent = 'Selecciona un cliente para ver sus facturas';
+        info.style.display = '';
+        return;
+    }
+
+    const facturas = DB.getFacturas().filter(f => f.clienteId === clienteId && (f.importe > 0 || !f.esAbono));
+    if (facturas.length === 0) {
+        container.innerHTML = '';
+        info.textContent = 'Este cliente no tiene facturas';
+        info.style.display = '';
+        return;
+    }
+
+    info.style.display = 'none';
+    const seleccionadas = (hiddenInput.value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+    let html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+    facturas.forEach(f => {
+        const estado = calcularEstadoFactura(f.id);
+        const checked = seleccionadas.includes(f.numero.toLowerCase()) ? 'checked' : '';
+        const estadoBadge = estado.estado === 'cobrada'
+            ? '<span style="color: var(--success);">Cobrada</span>'
+            : `<span style="color: var(--warning);">Pte: ${formatCurrency(estado.pendiente, f.moneda)}</span>`;
+        html += `
+            <label style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--gray-300); border-radius: 8px; cursor: pointer; font-size: 13px; background: ${checked ? '#fde8e8' : 'var(--gray-50)'};">
+                <input type="checkbox" value="${f.numero}" onchange="actualizarFacturasAbonadas()" ${checked}
+                    style="accent-color: var(--danger);">
+                <strong>${f.numero}</strong>
+                <span style="color: var(--gray-500);">${formatCurrency(f.importe, f.moneda)} - ${estadoBadge}</span>
+            </label>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function actualizarFacturasAbonadas() {
+    const checkboxes = document.querySelectorAll('#facturasAbonablesCheckboxes input[type="checkbox"]');
+    const seleccionadas = [];
+    checkboxes.forEach(cb => {
+        const label = cb.closest('label');
+        if (cb.checked) {
+            seleccionadas.push(cb.value);
+            if (label) label.style.background = '#fde8e8';
+        } else {
+            if (label) label.style.background = 'var(--gray-50)';
+        }
+    });
+    document.getElementById('facFacturasAbonadas').value = seleccionadas.join(', ');
+}
 
 // ========================================
 // COBROS - CRUD
@@ -2599,37 +2787,57 @@ function generarInforme() {
     const fechaInicio = document.getElementById('infFechaInicio').value;
     const fechaFin = document.getElementById('infFechaFin').value;
     const showroomId = document.getElementById('infShowroom').value;
-    
+
     if (!fechaInicio || !fechaFin) {
         alert('Por favor selecciona el rango de fechas');
         return;
     }
-    
+
     const facturas = DB.getFacturas();
     const cobros = DB.getCobros();
     const clientes = DB.getClientes();
     const showrooms = DB.getShowrooms();
-    
-    // Encontrar facturas que quedaron cobradas al 100% en el periodo
+
     const facturasComision = [];
-    
-    facturas.forEach(factura => {
+    const abonosYaIncluidos = new Set();
+
+    // Paso 1: Facturas normales (no abonos)
+    facturas.filter(f => !f.esAbono).forEach(factura => {
         const cobrosFactura = cobros.filter(c => c.facturaId === factura.id)
             .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-        
+
+        // Buscar abonos que referencian esta factura
+        const abonosFactura = facturas.filter(f => f.esAbono && f.facturasAbonadas).filter(abono => {
+            const refs = abono.facturasAbonadas.split(',').map(s => s.trim().toLowerCase());
+            return refs.includes(factura.numero.toLowerCase());
+        });
+
+        // Calcular parte proporcional de cada abono para esta factura
+        function importeAbonoProporcional(abono) {
+            const refs = abono.facturasAbonadas.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+            if (refs.length === 1) return Math.abs(abono.importe);
+            const facturasRef = refs.map(r => facturas.find(f => f.numero.toLowerCase() === r && !f.esAbono)).filter(Boolean);
+            const importeTotal = facturasRef.reduce((sum, f) => sum + Math.abs(f.importe), 0);
+            return importeTotal > 0 ? Math.abs(abono.importe) * (factura.importe / importeTotal) : 0;
+        }
+
+        // Crear timeline de pagos: cobros + abonos ordenados por fecha
+        const pagos = [];
+        cobrosFactura.forEach(c => pagos.push({ fecha: c.fecha, importe: c.importe, tipo: 'cobro' }));
+        abonosFactura.forEach(a => pagos.push({ fecha: a.fecha, importe: importeAbonoProporcional(a), tipo: 'abono', abonoId: a.id }));
+        pagos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
         let acumulado = 0;
         let fechaCobro100 = null;
-        
-        // Encontrar fecha en que se cobró al 100%
-        for (const cobro of cobrosFactura) {
-            acumulado += cobro.importe;
+
+        for (const pago of pagos) {
+            acumulado += pago.importe;
             if (acumulado >= factura.importe) {
-                fechaCobro100 = cobro.fecha;
+                fechaCobro100 = pago.fecha;
                 break;
             }
         }
-        
-        // Si se cobró al 100% y está en el rango de fechas
+
         if (fechaCobro100 && fechaCobro100 >= fechaInicio && fechaCobro100 <= fechaFin) {
             const cliente = clientes.find(c => c.id === factura.clienteId);
             if (cliente && (!showroomId || cliente.showroomId === showroomId)) {
@@ -2644,16 +2852,103 @@ function generarInforme() {
                         comision: redondear2(factura.importe * showroom.comision / 100),
                         pedidosRef: factura.pedidos || ''
                     });
+
+                    // Escenarios 1 y 2: incluir abonos vinculados
+                    abonosFactura.forEach(abono => {
+                        // Comprobar si la factura ya estaba saldada ANTES de este abono (solo con cobros y otros abonos anteriores)
+                        let acumSinEsteAbono = 0;
+                        let yaEstabaSaldada = false;
+                        for (const pago of pagos) {
+                            if (pago.abonoId === abono.id) continue;
+                            if (new Date(pago.fecha) > new Date(abono.fecha)) break;
+                            acumSinEsteAbono += pago.importe;
+                            if (acumSinEsteAbono >= factura.importe) {
+                                yaEstabaSaldada = true;
+                                break;
+                            }
+                        }
+
+                        if (!yaEstabaSaldada) {
+                            // Escenarios 1/2: el abono se incluye con la factura en su periodo
+                            facturasComision.push({
+                                factura: abono,
+                                cliente,
+                                showroom,
+                                fechaCobro100,
+                                totalCobrado: 0,
+                                comision: redondear2(abono.importe * showroom.comision / 100),
+                                pedidosRef: abono.facturasAbonadas || '',
+                                esAbono: true
+                            });
+                            abonosYaIncluidos.add(abono.id);
+                        }
+                    });
                 }
             }
         }
     });
-    
+
+    // Paso 2: Escenario 3 - Abonos cuyas facturas ya estaban saldadas antes del abono
+    facturas.filter(f => f.esAbono).forEach(abono => {
+        if (abonosYaIncluidos.has(abono.id)) return;
+
+        const refsStr = abono.facturasAbonadas || '';
+        const refs = refsStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        if (refs.length === 0) return;
+
+        // Verificar que TODAS las facturas referenciadas estaban saldadas ANTES del abono
+        const todasYaSaldadas = refs.every(ref => {
+            const facturaRef = facturas.find(f => f.numero.toLowerCase() === ref && !f.esAbono);
+            if (!facturaRef) return true;
+
+            const cobrosRef = cobros.filter(c => c.facturaId === facturaRef.id)
+                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+            // Incluir otros abonos (no este) en el cálculo
+            const otrosAbonos = facturas.filter(f => f.esAbono && f.id !== abono.id && f.facturasAbonadas).filter(a => {
+                const r = a.facturasAbonadas.split(',').map(s => s.trim().toLowerCase());
+                return r.includes(ref);
+            });
+
+            const pagos = [];
+            cobrosRef.forEach(c => pagos.push({ fecha: c.fecha, importe: c.importe }));
+            otrosAbonos.forEach(a => pagos.push({ fecha: a.fecha, importe: Math.abs(a.importe) }));
+            pagos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+            let acum = 0;
+            for (const pago of pagos) {
+                if (new Date(pago.fecha) >= new Date(abono.fecha)) break;
+                acum += pago.importe;
+                if (acum >= facturaRef.importe) return true;
+            }
+            return false;
+        });
+
+        if (todasYaSaldadas && abono.fecha >= fechaInicio && abono.fecha <= fechaFin) {
+            const cliente = clientes.find(c => c.id === abono.clienteId);
+            if (cliente && (!showroomId || cliente.showroomId === showroomId)) {
+                const showroom = showrooms.find(s => s.id === cliente.showroomId);
+                if (showroom) {
+                    facturasComision.push({
+                        factura: abono,
+                        cliente,
+                        showroom,
+                        fechaCobro100: abono.fecha,
+                        totalCobrado: 0,
+                        comision: redondear2(abono.importe * showroom.comision / 100),
+                        pedidosRef: abono.facturasAbonadas || '',
+                        esAbono: true
+                    });
+                }
+            }
+        }
+    });
+
     if (facturasComision.length === 0) {
         alert('No hay facturas cobradas al 100% en el periodo seleccionado');
         return;
     }
-    
+
     // Agrupar por showroom con totales por moneda
     const porShowroom = {};
     facturasComision.forEach(item => {
@@ -2672,7 +2967,7 @@ function generarInforme() {
         porShowroom[item.showroom.id].totalesPorMoneda[moneda].facturado += item.factura.importe;
         porShowroom[item.showroom.id].totalesPorMoneda[moneda].comision += item.comision;
     });
-    
+
     // Generar Excel
     crearInformeExcel(porShowroom, fechaInicio, fechaFin);
 }
@@ -2737,46 +3032,53 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
 
         data.facturas.sort((a, b) => new Date(a.fechaCobro100) - new Date(b.fechaCobro100)).forEach(item => {
             const moneda = item.factura.moneda || 'EUR';
+            const tipoLabel = item.factura.esAbono ? 'ABONO' : 'FACTURA';
+            const refCol = item.factura.esAbono
+                ? (item.factura.facturasAbonadas || '')
+                : (item.pedidosRef || item.factura.pedidos || '');
             sheetData.push([
-                'FACTURA',
+                tipoLabel,
                 item.factura.numero,
                 item.cliente.nombre,
-                item.pedidosRef || item.factura.pedidos || '',
+                refCol,
                 formatDate(item.factura.fecha),
                 formatDate(item.fechaCobro100),
                 moneda,
                 item.factura.importe,
-                item.totalCobrado,
+                item.factura.esAbono ? '' : item.totalCobrado,
                 item.comision
             ]);
 
-            const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
-                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+            // Detalle de cobros solo para facturas normales
+            if (!item.factura.esAbono) {
+                const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
+                    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
 
-            let acumulado = 0;
-            cobrosFactura.forEach(cobro => {
-                const pedidosDB = DB.getPedidos();
-                const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
-                acumulado += cobro.importe;
-                sheetData.push([
-                    cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
-                    formatDate(cobro.fecha),
-                    pedidoRef ? `(Pedido: ${pedidoRef})` : '',
-                    '',
-                    '',
-                    '',
-                    '',
-                    cobro.importe,
-                    acumulado,
-                    cobro.esAjuste ? 'Ajuste' : ''
-                ]);
-            });
+                let acumulado = 0;
+                cobrosFactura.forEach(cobro => {
+                    const pedidosDB = DB.getPedidos();
+                    const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
+                    acumulado += cobro.importe;
+                    sheetData.push([
+                        cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
+                        formatDate(cobro.fecha),
+                        pedidoRef ? `(Pedido: ${pedidoRef})` : '',
+                        '',
+                        '',
+                        '',
+                        '',
+                        cobro.importe,
+                        acumulado,
+                        cobro.esAjuste ? 'Ajuste' : ''
+                    ]);
+                });
+            }
 
             sheetData.push(['']);
         });
 
         // Encabezados
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Pedido(s)', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
+        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Pedido(s) / Fact. abonadas', 'Fecha Emisión', 'Fecha Cobro / Emisión', 'Moneda', 'Importe', 'Total Cobrado', 'Comisión']);
         sheetData.splice(5, 0, ['']);
 
         // Totales por moneda
@@ -2976,9 +3278,9 @@ function verDetalleInforme(informeId) {
                         <tr>
                             <th>Factura</th>
                             <th>Cliente</th>
-                            <th>Pedido(s)</th>
+                            <th>Pedido(s) / Fact. abonadas</th>
                             <th>Fecha Emisión</th>
-                            <th>Fecha Cobro 100%</th>
+                            <th>Fecha Cobro / Emisión</th>
                             <th>Importe</th>
                             <th>Comisión</th>
                         </tr>
@@ -2987,12 +3289,16 @@ function verDetalleInforme(informeId) {
         `;
 
         showroomData.facturas.forEach(item => {
-            const pedidosRef = item.pedidosRef || item.factura.pedidos || '-';
+            const esAbono = item.factura.esAbono || item.esAbono;
+            const refCol = esAbono
+                ? (item.factura.facturasAbonadas || '-')
+                : (item.pedidosRef || item.factura.pedidos || '-');
+            const rowStyle = esAbono ? ' style="background: #fef2f2;"' : '';
             html += `
-                <tr>
-                    <td><strong>${item.factura.numero}</strong></td>
+                <tr${rowStyle}>
+                    <td><strong>${item.factura.numero}</strong>${esAbono ? ' <span class="badge badge-danger" style="font-size: 10px;">ABONO</span>' : ''}</td>
                     <td>${item.cliente.nombre}</td>
-                    <td>${pedidosRef}</td>
+                    <td>${refCol}</td>
                     <td>${formatDate(item.factura.fecha)}</td>
                     <td>${formatDate(item.fechaCobro100)}</td>
                     <td>${formatCurrency(item.factura.importe, item.factura.moneda)}</td>
@@ -3000,25 +3306,27 @@ function verDetalleInforme(informeId) {
                 </tr>
             `;
 
-            const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
-                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            const pedidosDB = DB.getPedidos();
+            if (!esAbono) {
+                const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
+                    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+                const pedidosDB = DB.getPedidos();
 
-            let acum = 0;
-            cobrosFactura.forEach(cobro => {
-                acum += cobro.importe;
-                const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
-                html += `
-                    <tr style="background: var(--gray-50); font-size: 13px;">
-                        <td colspan="2" style="padding-left: 40px;">→ ${cobro.pedidoId ? 'Anticipo' : 'Cobro'}: ${formatDate(cobro.fecha)}</td>
-                        <td>${pedidoRef ? 'Ped: ' + pedidoRef : ''}</td>
-                        <td>Acumulado:</td>
-                        <td></td>
-                        <td>${formatCurrency(cobro.importe, cobro.moneda)}</td>
-                        <td>${formatCurrency(acum, item.factura.moneda)}${cobro.esAjuste ? ' <span class="badge badge-info">Ajuste</span>' : ''}</td>
-                    </tr>
-                `;
-            });
+                let acum = 0;
+                cobrosFactura.forEach(cobro => {
+                    acum += cobro.importe;
+                    const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
+                    html += `
+                        <tr style="background: var(--gray-50); font-size: 13px;">
+                            <td colspan="2" style="padding-left: 40px;">→ ${cobro.pedidoId ? 'Anticipo' : 'Cobro'}: ${formatDate(cobro.fecha)}</td>
+                            <td>${pedidoRef ? 'Ped: ' + pedidoRef : ''}</td>
+                            <td>Acumulado:</td>
+                            <td></td>
+                            <td>${formatCurrency(cobro.importe, cobro.moneda)}</td>
+                            <td>${formatCurrency(acum, item.factura.moneda)}${cobro.esAjuste ? ' <span class="badge badge-info">Ajuste</span>' : ''}</td>
+                        </tr>
+                    `;
+                });
+            }
         });
         
         html += `
@@ -3102,42 +3410,48 @@ function crearInformeExcelDesdeHistorico(informe) {
 
         data.facturas.forEach(item => {
             const moneda = item.factura.moneda || 'EUR';
+            const tipoLabel = item.factura.esAbono ? 'ABONO' : 'FACTURA';
+            const refCol = item.factura.esAbono
+                ? (item.factura.facturasAbonadas || '')
+                : (item.pedidosRef || item.factura.pedidos || '');
             sheetData.push([
-                'FACTURA',
+                tipoLabel,
                 item.factura.numero,
                 item.cliente.nombre,
-                item.pedidosRef || item.factura.pedidos || '',
+                refCol,
                 formatDate(item.factura.fecha),
                 formatDate(item.fechaCobro100),
                 moneda,
                 item.factura.importe,
-                item.totalCobrado,
+                item.factura.esAbono ? '' : item.totalCobrado,
                 item.comision
             ]);
 
-            const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
-                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            const pedidosDB = DB.getPedidos();
+            if (!item.factura.esAbono) {
+                const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
+                    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+                const pedidosDB = DB.getPedidos();
 
-            let acumulado = 0;
-            cobrosFactura.forEach(cobro => {
-                const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
-                acumulado += cobro.importe;
-                sheetData.push([
-                    cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
-                    formatDate(cobro.fecha),
-                    pedidoRef ? `(Pedido: ${pedidoRef})` : '',
-                    '', '', '', '',
-                    cobro.importe,
-                    acumulado,
-                    cobro.esAjuste ? 'Ajuste' : ''
-                ]);
-            });
+                let acumulado = 0;
+                cobrosFactura.forEach(cobro => {
+                    const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
+                    acumulado += cobro.importe;
+                    sheetData.push([
+                        cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
+                        formatDate(cobro.fecha),
+                        pedidoRef ? `(Pedido: ${pedidoRef})` : '',
+                        '', '', '', '',
+                        cobro.importe,
+                        acumulado,
+                        cobro.esAjuste ? 'Ajuste' : ''
+                    ]);
+                });
+            }
 
             sheetData.push(['']);
         });
 
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Pedido(s)', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
+        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Pedido(s) / Fact. abonadas', 'Fecha Emisión', 'Fecha Cobro / Emisión', 'Moneda', 'Importe', 'Total Cobrado', 'Comisión']);
         sheetData.splice(5, 0, ['']);
 
         sheetData.push(['']);

@@ -339,21 +339,36 @@
                 <button class="modal-close" onclick="cerrarModal('modalFactura')">×</button>
             </div>
             <div class="form-group">
+                <label>Tipo de documento *</label>
+                <div class="form-row" style="gap: 8px; margin-bottom: 8px;">
+                    <button type="button" id="facTipoFactura" class="btn btn-primary" onclick="cambiarTipoFactura('factura')" style="flex:1;">Factura</button>
+                    <button type="button" id="facTipoAbono" class="btn btn-secondary" onclick="cambiarTipoFactura('abono')" style="flex:1;">Rectificativa / Abono</button>
+                </div>
+            </div>
+            <div class="form-group">
                 <label for="facNumero">Número de Factura *</label>
                 <input type="text" id="facNumero" required>
             </div>
             <div class="form-group">
                 <label for="facCliente">Cliente *</label>
-                <select id="facCliente" required onchange="cargarPedidosCliente()">
+                <select id="facCliente" required onchange="cargarPedidosCliente(); cargarFacturasAbonables()">
                     <option value="">Seleccionar cliente...</option>
                 </select>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="facPedidosGroup">
                 <label>Pedido(s) Origen</label>
                 <div id="pedidosCheckboxes" style="margin-bottom: 4px;"></div>
                 <input type="hidden" id="facPedidos">
                 <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
                     Selecciona un cliente para ver sus pedidos
+                </small>
+            </div>
+            <div class="form-group" id="facAbonoGroup" style="display:none;">
+                <label>Factura(s) que abona *</label>
+                <div id="facturasAbonablesCheckboxes" style="margin-bottom: 4px;"></div>
+                <input type="hidden" id="facFacturasAbonadas">
+                <small id="facturasAbonablesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
+                    Selecciona un cliente para ver sus facturas
                 </small>
             </div>
             <div class="form-row">
@@ -375,8 +390,11 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="facImporte">Importe *</label>
+                    <label for="facImporte" id="facImporteLabel">Importe *</label>
                     <input type="number" id="facImporte" step="0.01" min="0" required>
+                    <small id="facImporteHelp" style="color: var(--gray-500); font-size: 13px; display: none; margin-top: 4px;">
+                        Introduce el importe en positivo. Se guardará como negativo.
+                    </small>
                 </div>
             </div>
             <div class="modal-footer">
