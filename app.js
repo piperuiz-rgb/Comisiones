@@ -88,10 +88,15 @@ function aplicarFormatoNumerosExcel(ws) {
             const addr = XLSX.utils.encode_cell({ r: R, c: C });
             const cell = ws[addr];
             if (cell && cell.t === 'n') {
+                cell.v = Math.round(cell.v * 100) / 100;
                 cell.z = '#,##0.00';
             }
         }
     }
+}
+
+function redondear2(valor) {
+    return Math.round(valor * 100) / 100;
 }
 
 // ========================================
@@ -113,118 +118,6 @@ function switchTab(tabName) {
     if (tabName === 'cobros') cargarTablaCobros();
     if (tabName === 'informes') cargarSelectShowrooms();
     if (tabName === 'historico') cargarHistoricoInformes();
-}
-
-// ========================================
-// DASHBOARD
-// ========================================
-
-function cargarDashboard() {
-    const facturas = DB.getFacturas();
-    const cobros = DB.getCobros();
-    const showrooms = DB.getShowrooms();
-    const clientes = DB.getClientes();
-    
-    // Calcular estadísticas
-    let totalFacturas = facturas.length;
-    let totalCobradas = 0;
-    let totalPendiente = 0;
-    let totalComisionesMes = 0;
-    
-    const hoy = new Date();
-    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    
-    facturas.forEach(factura => {
-        const estado = calcularEstadoFactura(factura.id);
-        
-        // Una factura está cobrada solo si el cobrado >= importe
-        if (estado.cobrado >= factura.importe) {
-            totalCobradas++;
-            // Si se cobró al 100% este mes, sumar comisión
-            const cobrosFactura = cobros.filter(c => c.facturaId === factura.id)
-                .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            
-            // Buscar el cobro que completó el 100%
-            let acumulado = 0;
-            let fechaCobro100 = null;
-            for (const cobro of cobrosFactura) {
-                acumulado += cobro.importe;
-                if (acumulado >= factura.importe) {
-                    fechaCobro100 = cobro.fecha;
-                    break;
-                }
-            }
-            
-            if (fechaCobro100 && new Date(fechaCobro100) >= inicioMes) {
-                const cliente = clientes.find(c => c.id === factura.clienteId);
-                if (cliente) {
-                    const showroom = showrooms.find(s => s.id === cliente.showroomId);
-                    if (showroom) {
-                        totalComisionesMes += (factura.importe * showroom.comision / 100);
-                    }
-                }
-            }
-        }
-        
-        // Sumar pendiente
-        totalPendiente += estado.pendiente;
-    });
-    
-    // Mostrar stats
-    const statsGrid = document.getElementById('statsGrid');
-    statsGrid.innerHTML = `
-        <div class="stat-card">
-            <div class="stat-label">Total Facturas</div>
-            <div class="stat-value">${totalFacturas}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Cobradas al 100%</div>
-            <div class="stat-value">${totalCobradas}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Pendiente de Cobro</div>
-            <div class="stat-value">${formatCurrency(totalPendiente, 'EUR')}</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Comisiones Este Mes</div>
-            <div class="stat-value">${formatCurrency(totalComisionesMes, 'EUR')}</div>
-        </div>
-    `;
-    
-    // Facturas pendientes
-    const pendientes = facturas.filter(f => {
-        const estado = calcularEstadoFactura(f.id);
-        return estado.cobrado < f.importe; // Cambiado: no cobrada al 100%
-    }).sort((a, b) => new Date(a.vencimiento) - new Date(b.vencimiento));
-    
-    const container = document.getElementById('facturasPendientesContainer');
-    if (pendientes.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>No hay facturas pendientes</p></div>';
-        return;
-    }
-    
-    let html = '<table><thead><tr><th>Factura</th><th>Cliente</th><th>Importe</th><th>Cobrado</th><th>Pendiente</th><th>Vencimiento</th><th>Estado</th></tr></thead><tbody>';
-    
-    pendientes.forEach(factura => {
-        const cliente = clientes.find(c => c.id === factura.clienteId);
-        const estado = calcularEstadoFactura(factura.id);
-        const vencido = new Date(factura.vencimiento) < hoy;
-        
-        html += `
-            <tr>
-                <td><strong>${factura.numero}</strong></td>
-                <td>${cliente ? cliente.nombre : '-'}</td>
-                <td>${formatCurrency(factura.importe, factura.moneda)}</td>
-                <td>${formatCurrency(estado.cobrado, factura.moneda)}</td>
-                <td>${formatCurrency(estado.pendiente, factura.moneda)}</td>
-                <td style="color: ${vencido ? 'var(--danger)' : 'inherit'}">${formatDate(factura.vencimiento)}</td>
-                <td><span class="badge badge-${estado.estado === 'pendiente' ? 'danger' : 'warning'}">${estado.estado === 'pendiente' ? '🔴 Pendiente' : '🟡 Parcial'}</span></td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    container.innerHTML = html;
 }
 
 function calcularEstadoFactura(facturaId) {
@@ -2239,7 +2132,7 @@ function generarInforme() {
                         showroom,
                         fechaCobro100,
                         totalCobrado: acumulado,
-                        comision: factura.importe * showroom.comision / 100
+                        comision: redondear2(factura.importe * showroom.comision / 100)
                     });
                 }
             }
