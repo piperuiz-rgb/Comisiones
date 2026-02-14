@@ -81,6 +81,19 @@ function calcularUmbralSaldo(importeFactura) {
     return 100;
 }
 
+function aplicarFormatoNumerosExcel(ws) {
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+            const addr = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = ws[addr];
+            if (cell && cell.t === 'n') {
+                cell.z = '#,##0.00';
+            }
+        }
+    }
+}
+
 // ========================================
 // NAVEGACIÓN
 // ========================================
@@ -216,20 +229,21 @@ function cargarDashboard() {
 
 function calcularEstadoFactura(facturaId) {
     const factura = DB.getFacturas().find(f => f.id === facturaId);
-    if (!factura) return { estado: 'pendiente', cobrado: 0, pendiente: 0 };
-    
+    if (!factura) return { estado: 'pendiente', cobrado: 0, pendiente: 0, porcentaje: 0 };
+
     const cobros = DB.getCobros().filter(c => c.facturaId === facturaId);
     const totalCobrado = cobros.reduce((sum, c) => sum + c.importe, 0);
     const pendiente = factura.importe - totalCobrado;
-    
+    const porcentaje = factura.importe > 0 ? Math.min(100, (totalCobrado / factura.importe) * 100) : 0;
+
     let estado = 'pendiente';
     if (totalCobrado >= factura.importe) {
         estado = 'cobrada';
     } else if (totalCobrado > 0) {
         estado = 'parcial';
     }
-    
-    return { estado, cobrado: totalCobrado, pendiente: Math.max(0, pendiente) };
+
+    return { estado, cobrado: totalCobrado, pendiente: Math.max(0, pendiente), porcentaje };
 }
 
 // ========================================
@@ -495,26 +509,37 @@ function cargarDashboard() {
             </div>
         `;
     } else {
-        let html = '<table><thead><tr><th>Factura</th><th>Cliente</th><th>Importe</th><th>Cobrado</th><th>Pendiente</th><th>Estado</th><th>Vencimiento</th></tr></thead><tbody>';
-        
+        const hoy = new Date();
+        // Ordenar por fecha de vencimiento (más antiguas primero)
+        facturasPend.sort((a, b) => new Date(a.vencimiento || a.fechaVencimiento) - new Date(b.vencimiento || b.fechaVencimiento));
+
+        let html = '<table><thead><tr><th>Factura</th><th>Cliente</th><th>Showroom</th><th>Importe</th><th>Cobrado</th><th>Pendiente</th><th>Estado</th><th>Vencimiento</th><th>Días Vencida</th></tr></thead><tbody>';
+
         facturasPend.forEach(fac => {
             const estado = calcularEstadoFactura(fac.id);
             const cliente = clientes.find(c => c.id === fac.clienteId);
+            const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
             const badge = estado.porcentaje === 0 ? 'danger' : 'warning';
-            
+            const fechaVenc = new Date(fac.vencimiento || fac.fechaVencimiento);
+            const diffMs = hoy - fechaVenc;
+            const diasVencida = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            const vencida = diasVencida > 0;
+
             html += `
                 <tr>
                     <td><strong>${fac.numero}</strong></td>
                     <td>${cliente ? cliente.nombre : '-'}</td>
+                    <td>${showroom ? showroom.nombre : '-'}</td>
                     <td>${formatCurrency(fac.importe, fac.moneda)}</td>
                     <td>${formatCurrency(estado.cobrado, fac.moneda)}</td>
-                    <td>${formatCurrency(estado.pendiente, fac.moneda)}</td>
+                    <td style="color: var(--warning); font-weight: 600;">${formatCurrency(estado.pendiente, fac.moneda)}</td>
                     <td><span class="badge badge-${badge}">${estado.porcentaje.toFixed(0)}%</span></td>
-                    <td>${formatDate(fac.fechaVencimiento)}</td>
+                    <td style="color: ${vencida ? 'var(--danger)' : 'inherit'}">${formatDate(fac.vencimiento || fac.fechaVencimiento)}</td>
+                    <td style="font-weight: 600; color: ${vencida ? 'var(--danger)' : 'var(--success)'};">${vencida ? diasVencida + ' días' : 'Al día'}</td>
                 </tr>
             `;
         });
-        
+
         html += '</tbody></table>';
         document.getElementById('facturasPendientesContainer').innerHTML = html;
     }
@@ -2279,15 +2304,16 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     wsResumen['!cols'] = [
         { wch: 30 },
-        { wch: 15 },
+        { wch: 18 },
         { wch: 12 },
-        { wch: 15 }
+        { wch: 18 }
     ];
-    
+    aplicarFormatoNumerosExcel(wsResumen);
+
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
-    
+
     const cobros = DB.getCobros();
-    
+
     // Hoja por cada showroom CON DETALLE DE COBROS
     Object.values(porShowroom).forEach(data => {
         const sheetData = [
@@ -2296,7 +2322,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
             [`% Comisión: ${data.showroom.comision}%`],
             [''],
         ];
-        
+
         data.facturas.sort((a, b) => new Date(a.fechaCobro100) - new Date(b.fechaCobro100)).forEach(item => {
             // Línea de factura
             sheetData.push([
@@ -2309,11 +2335,11 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                 item.totalCobrado,
                 item.comision
             ]);
-            
+
             // Detalle de cobros
             const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
                 .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            
+
             let acumulado = 0;
             cobrosFactura.forEach(cobro => {
                 acumulado += cobro.importe;
@@ -2328,17 +2354,17 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                     cobro.esAjuste ? 'Ajuste' : ''
                 ]);
             });
-            
+
             sheetData.push(['']); // Línea vacía entre facturas
         });
-        
+
         // Encabezados (los ponemos después de calcular los datos para que queden arriba del detalle)
         sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
         sheetData.splice(5, 0, ['']);
-        
+
         sheetData.push(['']);
         sheetData.push(['', '', '', '', 'TOTAL', data.totalFacturado, '', data.totalComision]);
-        
+
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
             { wch: 12 },  // Tipo
@@ -2346,11 +2372,12 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
             { wch: 30 },  // Cliente
             { wch: 15 },  // Fecha Emisión
             { wch: 18 },  // Fecha Cobro 100%
-            { wch: 15 },  // Importe Factura
-            { wch: 15 },  // Total Cobrado / Acumulado
-            { wch: 15 }   // Comisión / Estado
+            { wch: 18 },  // Importe Factura
+            { wch: 18 },  // Total Cobrado / Acumulado
+            { wch: 18 }   // Comisión / Estado
         ];
-        
+        aplicarFormatoNumerosExcel(ws);
+
         XLSX.utils.book_append_sheet(wb, ws, data.showroom.nombre.substring(0, 30));
     });
     
@@ -2611,12 +2638,13 @@ function crearInformeExcelDesdeHistorico(informe) {
     resumenData.push(['TOTAL', informe.totalGeneral, '', informe.totalComisionGeneral]);
     
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
-    wsResumen['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 12 }, { wch: 15 }];
+    wsResumen['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 18 }];
+    aplicarFormatoNumerosExcel(wsResumen);
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
-    
+
     // Hojas por showroom con detalle
     const cobros = DB.getCobros();
-    
+
     Object.values(informe.detalleCompleto).forEach(data => {
         const sheetData = [
             [`COMISIONES - ${data.showroom.nombre}`],
@@ -2624,7 +2652,7 @@ function crearInformeExcelDesdeHistorico(informe) {
             [`% Comisión: ${data.showroom.comision}%`],
             [''],
         ];
-        
+
         data.facturas.forEach(item => {
             sheetData.push([
                 'FACTURA',
@@ -2636,10 +2664,10 @@ function crearInformeExcelDesdeHistorico(informe) {
                 item.totalCobrado,
                 item.comision
             ]);
-            
+
             const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
                 .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            
+
             let acumulado = 0;
             cobrosFactura.forEach(cobro => {
                 acumulado += cobro.importe;
@@ -2654,22 +2682,23 @@ function crearInformeExcelDesdeHistorico(informe) {
                     cobro.esAjuste ? 'Ajuste' : ''
                 ]);
             });
-            
+
             sheetData.push(['']);
         });
-        
+
         sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
         sheetData.splice(5, 0, ['']);
-        
+
         sheetData.push(['']);
         sheetData.push(['', '', '', '', 'TOTAL', data.totalFacturado, '', data.totalComision]);
-        
+
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
             { wch: 12 }, { wch: 18 }, { wch: 30 }, { wch: 15 },
-            { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 15 }
+            { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
         ];
-        
+        aplicarFormatoNumerosExcel(ws);
+
         XLSX.utils.book_append_sheet(wb, ws, data.showroom.nombre.substring(0, 30));
     });
     
