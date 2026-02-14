@@ -139,6 +139,25 @@ function calcularEstadoFactura(facturaId) {
     return { estado, cobrado: totalCobrado, pendiente: Math.max(0, pendiente), porcentaje };
 }
 
+function calcularEstadoPedido(pedidoId) {
+    const pedido = DB.getPedidos().find(p => p.id === pedidoId);
+    if (!pedido) return { estado: 'pendiente', cobrado: 0, pendiente: 0, porcentaje: 0 };
+
+    const cobros = DB.getCobros().filter(c => c.pedidoId === pedidoId && !c.facturaId);
+    const totalCobrado = cobros.reduce((sum, c) => sum + c.importe, 0);
+    const pendiente = pedido.importe - totalCobrado;
+    const porcentaje = pedido.importe > 0 ? Math.min(100, (totalCobrado / pedido.importe) * 100) : 0;
+
+    let estado = 'pendiente';
+    if (totalCobrado >= pedido.importe) {
+        estado = 'cobrada';
+    } else if (totalCobrado > 0) {
+        estado = 'parcial';
+    }
+
+    return { estado, cobrado: totalCobrado, pendiente: Math.max(0, pendiente), porcentaje };
+}
+
 // ========================================
 // SHOWROOMS - CRUD
 // ========================================
@@ -1579,40 +1598,69 @@ function cargarPedidosCliente() {
 function guardarFactura() {
     const numero = document.getElementById('facNumero').value.trim();
     const clienteId = document.getElementById('facCliente').value;
-    const pedidos = document.getElementById('facPedidos').value.trim();
+    const pedidosStr = document.getElementById('facPedidos').value.trim();
     const fecha = document.getElementById('facFecha').value;
     const vencimiento = document.getElementById('facVencimiento').value;
     const moneda = document.getElementById('facMoneda').value;
     const importe = parseFloat(document.getElementById('facImporte').value);
-    
+
     if (!numero || !clienteId || !fecha || !vencimiento || isNaN(importe)) {
         alert('Por favor completa todos los campos obligatorios');
         return;
     }
-    
+
     const facturas = DB.getFacturas();
-    
+    let facturaId;
+
     if (editandoId) {
+        facturaId = editandoId;
         const index = facturas.findIndex(f => f.id === editandoId);
-        facturas[index] = { ...facturas[index], numero, clienteId, pedidos, fecha, vencimiento, moneda, importe };
+        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, fecha, vencimiento, moneda, importe };
     } else {
+        facturaId = generarId();
         facturas.push({
-            id: generarId(),
-            numero,
-            clienteId,
-            pedidos,
-            fecha,
-            vencimiento,
-            moneda,
-            importe,
+            id: facturaId,
+            numero, clienteId,
+            pedidos: pedidosStr,
+            fecha, vencimiento, moneda, importe,
             fechaCreacion: new Date().toISOString()
         });
     }
-    
+
     DB.setFacturas(facturas);
+
+    // Transferir anticipos de pedidos a esta factura
+    if (pedidosStr) {
+        const pedidosDB = DB.getPedidos();
+        const refs = pedidosStr.split(',').map(s => s.trim().toLowerCase());
+        const cobros = DB.getCobros();
+        let transferidos = 0;
+
+        refs.forEach(ref => {
+            const pedido = pedidosDB.find(p => p.numero.toLowerCase() === ref);
+            if (!pedido) return;
+
+            // Buscar cobros sobre este pedido que aún no estén transferidos a una factura
+            cobros.forEach(cobro => {
+                if (cobro.pedidoId === pedido.id && !cobro.facturaId) {
+                    cobro.facturaId = facturaId;
+                    transferidos++;
+                }
+            });
+        });
+
+        if (transferidos > 0) {
+            DB.setCobros(cobros);
+            showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'}. ${transferidos} anticipo(s) transferido(s) desde pedido(s).`, 'success');
+        } else {
+            showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'} correctamente`, 'success');
+        }
+    } else {
+        showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'} correctamente`, 'success');
+    }
+
     cerrarModal('modalFactura');
     cargarTablaFacturas();
-    showAlert('facturasAlert', `Factura ${editandoId ? 'actualizada' : 'creada'} correctamente`, 'success');
 }
 
 function cargarTablaFacturas() {
@@ -1950,123 +1998,192 @@ function guardarAsociacionesPedidos(total) {
 // COBROS - CRUD
 // ========================================
 
+var tipoCobro = 'factura'; // 'factura' o 'pedido'
+
+function cambiarTipoCobro(tipo) {
+    tipoCobro = tipo;
+    document.getElementById('cobTipoFactura').className = tipo === 'factura' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('cobTipoPedido').className = tipo === 'pedido' ? 'btn btn-primary' : 'btn btn-secondary';
+    document.getElementById('cobFacturaGroup').style.display = tipo === 'factura' ? '' : 'none';
+    document.getElementById('cobPedidoGroup').style.display = tipo === 'pedido' ? '' : 'none';
+    document.getElementById('infoFactura').style.display = 'none';
+
+    if (tipo === 'factura') {
+        document.getElementById('cobPedido').value = '';
+    } else {
+        document.getElementById('cobFactura').value = '';
+    }
+}
+
 function modalCobro(id = null) {
     const modal = document.getElementById('modalCobro');
     const title = document.getElementById('modalCobroTitle');
-    
+    const clientes = DB.getClientes();
+
     // Cargar facturas no completamente cobradas
     const facturas = DB.getFacturas();
     const selectFactura = document.getElementById('cobFactura');
     selectFactura.innerHTML = '<option value="">Seleccionar factura...</option>';
-    
+
     facturas.forEach(f => {
         const estado = calcularEstadoFactura(f.id);
         if (estado.estado !== 'cobrada') {
-            selectFactura.innerHTML += `<option value="${f.id}">${f.numero} - Pendiente: ${formatCurrency(estado.pendiente, f.moneda)}</option>`;
+            const cliente = clientes.find(c => c.id === f.clienteId);
+            selectFactura.innerHTML += `<option value="${f.id}">${f.numero} - ${cliente ? cliente.nombre : ''} - Pte: ${formatCurrency(estado.pendiente, f.moneda)}</option>`;
         }
     });
-    
+
+    // Cargar pedidos con anticipos pendientes
+    const pedidos = DB.getPedidos();
+    const selectPedido = document.getElementById('cobPedido');
+    selectPedido.innerHTML = '<option value="">Seleccionar pedido...</option>';
+
+    pedidos.forEach(p => {
+        const estado = calcularEstadoPedido(p.id);
+        const cliente = clientes.find(c => c.id === p.clienteId);
+        selectPedido.innerHTML += `<option value="${p.id}">${p.numero} - ${cliente ? cliente.nombre : ''} - ${formatCurrency(p.importe, p.moneda)}${estado.cobrado > 0 ? ' (Antic: ' + formatCurrency(estado.cobrado, p.moneda) + ')' : ''}</option>`;
+    });
+
     if (id) {
         const cobros = DB.getCobros();
         const cobro = cobros.find(c => c.id === id);
         title.textContent = 'Editar Cobro';
-        document.getElementById('cobFactura').value = cobro.facturaId;
+
+        if (cobro.pedidoId && !cobro.facturaId) {
+            cambiarTipoCobro('pedido');
+            document.getElementById('cobPedido').value = cobro.pedidoId;
+        } else {
+            cambiarTipoCobro('factura');
+            document.getElementById('cobFactura').value = cobro.facturaId;
+        }
+
         document.getElementById('cobFecha').value = cobro.fecha;
         document.getElementById('cobMoneda').value = cobro.moneda;
         document.getElementById('cobImporte').value = cobro.importe;
-        mostrarInfoFactura();
+        mostrarInfoCobro();
         editandoId = id;
     } else {
         title.textContent = 'Nuevo Cobro';
+        cambiarTipoCobro('factura');
         document.getElementById('cobFactura').value = '';
+        document.getElementById('cobPedido').value = '';
         document.getElementById('cobFecha').valueAsDate = new Date();
         document.getElementById('cobMoneda').value = 'EUR';
         document.getElementById('cobImporte').value = '';
         document.getElementById('infoFactura').style.display = 'none';
         editandoId = null;
     }
-    
+
     modal.classList.add('visible');
 }
 
-function mostrarInfoFactura() {
-    const facturaId = document.getElementById('cobFactura').value;
-    if (!facturaId) {
-        document.getElementById('infoFactura').style.display = 'none';
-        return;
+function mostrarInfoCobro() {
+    const infoBox = document.getElementById('infoFactura');
+
+    if (tipoCobro === 'factura') {
+        const facturaId = document.getElementById('cobFactura').value;
+        if (!facturaId) { infoBox.style.display = 'none'; return; }
+
+        const factura = DB.getFacturas().find(f => f.id === facturaId);
+        const estado = calcularEstadoFactura(facturaId);
+
+        document.getElementById('infFactTotal').textContent = formatCurrency(factura.importe, factura.moneda);
+        document.getElementById('infFactCobrado').textContent = formatCurrency(estado.cobrado, factura.moneda);
+        document.getElementById('infFactPendiente').textContent = formatCurrency(estado.pendiente, factura.moneda);
+        infoBox.style.display = 'block';
+        document.getElementById('cobMoneda').value = factura.moneda;
+    } else {
+        const pedidoId = document.getElementById('cobPedido').value;
+        if (!pedidoId) { infoBox.style.display = 'none'; return; }
+
+        const pedido = DB.getPedidos().find(p => p.id === pedidoId);
+        const estado = calcularEstadoPedido(pedidoId);
+
+        document.getElementById('infFactTotal').textContent = formatCurrency(pedido.importe, pedido.moneda);
+        document.getElementById('infFactCobrado').textContent = formatCurrency(estado.cobrado, pedido.moneda);
+        document.getElementById('infFactPendiente').textContent = formatCurrency(estado.pendiente, pedido.moneda);
+        infoBox.style.display = 'block';
+        document.getElementById('cobMoneda').value = pedido.moneda;
     }
-    
-    const factura = DB.getFacturas().find(f => f.id === facturaId);
-    const estado = calcularEstadoFactura(facturaId);
-    
-    document.getElementById('infFactTotal').textContent = formatCurrency(factura.importe, factura.moneda);
-    document.getElementById('infFactCobrado').textContent = formatCurrency(estado.cobrado, factura.moneda);
-    document.getElementById('infFactPendiente').textContent = formatCurrency(estado.pendiente, factura.moneda);
-    document.getElementById('infoFactura').style.display = 'block';
-    
-    // Preseleccionar moneda de la factura
-    document.getElementById('cobMoneda').value = factura.moneda;
 }
 
+// Alias de compatibilidad
+function mostrarInfoFactura() { mostrarInfoCobro(); }
+
 function guardarCobro() {
-    const facturaId = document.getElementById('cobFactura').value;
     const fecha = document.getElementById('cobFecha').value;
     const moneda = document.getElementById('cobMoneda').value;
     const importe = parseFloat(document.getElementById('cobImporte').value);
-    
-    if (!facturaId || !fecha || isNaN(importe) || importe <= 0) {
+
+    let facturaId = null;
+    let pedidoId = null;
+
+    if (tipoCobro === 'factura') {
+        facturaId = document.getElementById('cobFactura').value;
+        if (!facturaId) { alert('Selecciona una factura'); return; }
+    } else {
+        pedidoId = document.getElementById('cobPedido').value;
+        if (!pedidoId) { alert('Selecciona un pedido'); return; }
+    }
+
+    if (!fecha || isNaN(importe) || importe <= 0) {
         alert('Por favor completa todos los campos correctamente');
         return;
     }
-    
+
     // Verificar que no exceda el pendiente
-    const factura = DB.getFacturas().find(f => f.id === facturaId);
-    const estado = calcularEstadoFactura(facturaId);
-    
-    if (importe > estado.pendiente) {
-        alert(`El importe no puede ser mayor que el pendiente (${formatCurrency(estado.pendiente, factura.moneda)})`);
-        return;
+    if (facturaId) {
+        const factura = DB.getFacturas().find(f => f.id === facturaId);
+        const estado = calcularEstadoFactura(facturaId);
+        if (importe > estado.pendiente) {
+            alert(`El importe no puede ser mayor que el pendiente (${formatCurrency(estado.pendiente, factura.moneda)})`);
+            return;
+        }
+    } else if (pedidoId) {
+        const pedido = DB.getPedidos().find(p => p.id === pedidoId);
+        const estado = calcularEstadoPedido(pedidoId);
+        if (importe > estado.pendiente) {
+            alert(`El importe del anticipo no puede ser mayor que el pendiente del pedido (${formatCurrency(estado.pendiente, pedido.moneda)})`);
+            return;
+        }
     }
-    
+
     const cobros = DB.getCobros();
-    
+
     if (editandoId) {
         const index = cobros.findIndex(c => c.id === editandoId);
-        cobros[index] = { ...cobros[index], facturaId, fecha, moneda, importe };
+        cobros[index] = { ...cobros[index], facturaId, pedidoId, fecha, moneda, importe };
     } else {
         cobros.push({
             id: generarId(),
             facturaId,
-            fecha,
-            moneda,
-            importe,
+            pedidoId,
+            fecha, moneda, importe,
             fechaCreacion: new Date().toISOString()
         });
     }
-    
+
     DB.setCobros(cobros);
-    
-    // Verificar saldo residual
-    const nuevoEstado = calcularEstadoFactura(facturaId);
-    const saldoResidual = factura.importe - nuevoEstado.cobrado;
-    const umbral = calcularUmbralSaldo(factura.importe);
-    
-    if (saldoResidual > 0 && saldoResidual <= umbral && nuevoEstado.estado !== 'cobrada') {
-        // Guardar información para el modal de saldo residual
-        facturaSaldoResidual = {
-            facturaId,
-            saldo: saldoResidual,
-            umbral
-        };
-        
-        document.getElementById('mensajeSaldoResidual').textContent = 
-            `La factura ${factura.numero} tiene un saldo pendiente de ${formatCurrency(saldoResidual, factura.moneda)}, que es inferior al umbral de ${formatCurrency(umbral, factura.moneda)}. ¿Deseas marcarla como pagada al 100%?`;
-        
-        cerrarModal('modalCobro');
-        document.getElementById('modalSaldoResidual').classList.add('visible');
-        return;
+
+    // Verificar saldo residual solo para facturas
+    if (facturaId) {
+        const factura = DB.getFacturas().find(f => f.id === facturaId);
+        const nuevoEstado = calcularEstadoFactura(facturaId);
+        const saldoResidual = factura.importe - nuevoEstado.cobrado;
+        const umbral = calcularUmbralSaldo(factura.importe);
+
+        if (saldoResidual > 0 && saldoResidual <= umbral && nuevoEstado.estado !== 'cobrada') {
+            facturaSaldoResidual = { facturaId, saldo: saldoResidual, umbral };
+
+            document.getElementById('mensajeSaldoResidual').textContent =
+                `La factura ${factura.numero} tiene un saldo pendiente de ${formatCurrency(saldoResidual, factura.moneda)}, que es inferior al umbral de ${formatCurrency(umbral, factura.moneda)}. ¿Deseas marcarla como pagada al 100%?`;
+
+            cerrarModal('modalCobro');
+            document.getElementById('modalSaldoResidual').classList.add('visible');
+            return;
+        }
     }
-    
+
     cerrarModal('modalCobro');
     cargarTablaCobros();
     cargarDashboard();
@@ -2103,26 +2220,49 @@ function marcarComoCompleto() {
 function cargarTablaCobros() {
     const cobros = DB.getCobros();
     const facturas = DB.getFacturas();
+    const pedidos = DB.getPedidos();
     const clientes = DB.getClientes();
     const container = document.getElementById('cobrosTable');
-    
+
     if (cobros.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="empty-icon">💰</div><p>No hay cobros registrados</p></div>';
         return;
     }
-    
-    let html = '<table><thead><tr><th>Fecha</th><th>Factura</th><th>Cliente</th><th>Importe</th><th>Acciones</th></tr></thead><tbody>';
-    
+
+    let html = '<table><thead><tr><th>Fecha</th><th>Aplicado a</th><th>Cliente</th><th>Importe</th><th>Tipo</th><th>Acciones</th></tr></thead><tbody>';
+
     cobros.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(cobro => {
-        const factura = facturas.find(f => f.id === cobro.facturaId);
-        const cliente = factura ? clientes.find(c => c.id === factura.clienteId) : null;
-        
+        let referencia = '-';
+        let clienteNombre = '-';
+        let tipoBadge = '';
+
+        if (cobro.facturaId) {
+            const factura = facturas.find(f => f.id === cobro.facturaId);
+            if (factura) {
+                referencia = factura.numero;
+                const cliente = clientes.find(c => c.id === factura.clienteId);
+                clienteNombre = cliente ? cliente.nombre : '-';
+            }
+            tipoBadge = cobro.pedidoId
+                ? '<span class="badge badge-success">Anticipo transferido</span>'
+                : '<span class="badge badge-info">Factura</span>';
+        } else if (cobro.pedidoId) {
+            const pedido = pedidos.find(p => p.id === cobro.pedidoId);
+            if (pedido) {
+                referencia = pedido.numero;
+                const cliente = clientes.find(c => c.id === pedido.clienteId);
+                clienteNombre = cliente ? cliente.nombre : '-';
+            }
+            tipoBadge = '<span class="badge badge-warning">Anticipo s/pedido</span>';
+        }
+
         html += `
             <tr>
                 <td>${formatDate(cobro.fecha)}</td>
-                <td><strong>${factura ? factura.numero : '-'}</strong></td>
-                <td>${cliente ? cliente.nombre : '-'}</td>
+                <td><strong>${referencia}</strong></td>
+                <td>${clienteNombre}</td>
                 <td>${formatCurrency(cobro.importe, cobro.moneda)}${cobro.esAjuste ? ' <span class="badge badge-info">Ajuste</span>' : ''}</td>
+                <td>${tipoBadge}</td>
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-icon" onclick="modalCobro('${cobro.id}')">✏️</button>
@@ -2132,7 +2272,7 @@ function cargarTablaCobros() {
             </tr>
         `;
     });
-    
+
     html += '</tbody></table>';
     container.innerHTML = html;
 }
@@ -2158,45 +2298,62 @@ function importarCobros(file) {
 
             const cobros = DB.getCobros();
             const facturas = DB.getFacturas();
+            const pedidosDB = DB.getPedidos();
             const clientes = DB.getClientes();
             let importados = 0;
-            const sinAsociar = []; // Cobros que no matchean con ninguna factura
+            let anticipos = 0;
+            const sinAsociar = [];
 
-            // Formato: Factura | Fecha | Moneda | Importe
+            // Formato: Factura/Pedido | Fecha | Moneda | Importe
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row[0]) continue;
 
-                const facturaRef = String(row[0]).trim();
+                const ref = String(row[0]).trim();
                 const fecha = row[1] || new Date().toISOString().split('T')[0];
                 const moneda = String(row[2] || 'EUR');
                 const importe = parseFloat(row[3]) || 0;
 
-                const factura = facturas.find(f => f.numero.toLowerCase() === facturaRef.toLowerCase());
-
+                // Primero buscar por factura
+                const factura = facturas.find(f => f.numero.toLowerCase() === ref.toLowerCase());
                 if (factura) {
                     cobros.push({
                         id: generarId(),
-                        facturaId: factura.id,
+                        facturaId: factura.id, pedidoId: null,
                         fecha, moneda, importe,
                         fechaCreacion: new Date().toISOString()
                     });
                     importados++;
-                } else {
-                    sinAsociar.push({ facturaRef, fecha, moneda, importe });
+                    continue;
                 }
+
+                // Si no, buscar por pedido (anticipo)
+                const pedido = pedidosDB.find(p => p.numero.toLowerCase() === ref.toLowerCase());
+                if (pedido) {
+                    cobros.push({
+                        id: generarId(),
+                        facturaId: null, pedidoId: pedido.id,
+                        fecha, moneda, importe,
+                        fechaCreacion: new Date().toISOString()
+                    });
+                    anticipos++;
+                    continue;
+                }
+
+                // No matchea ni factura ni pedido
+                sinAsociar.push({ facturaRef: ref, fecha, moneda, importe });
             }
 
             DB.setCobros(cobros);
             cargarTablaCobros();
 
-            let msg = `${importados} cobros importados correctamente.`;
-            if (sinAsociar.length > 0) {
-                msg += ` ${sinAsociar.length} cobro(s) sin factura asociada.`;
-            }
-            showAlert('cobrosAlert', msg, importados > 0 ? 'success' : 'error');
+            let msg = '';
+            if (importados > 0) msg += `${importados} cobro(s) sobre facturas. `;
+            if (anticipos > 0) msg += `${anticipos} anticipo(s) sobre pedidos. `;
+            if (sinAsociar.length > 0) msg += `${sinAsociar.length} cobro(s) sin asociar.`;
+            if (!msg) msg = 'No se importaron cobros.';
+            showAlert('cobrosAlert', msg, (importados + anticipos) > 0 ? 'success' : 'error');
 
-            // Mostrar modal de sugerencias si hay cobros sin asociar
             if (sinAsociar.length > 0) {
                 mostrarModalAsociarCobros(sinAsociar, facturas, clientes);
             }
@@ -2386,7 +2543,8 @@ function generarInforme() {
                         showroom,
                         fechaCobro100,
                         totalCobrado: acumulado,
-                        comision: redondear2(factura.importe * showroom.comision / 100)
+                        comision: redondear2(factura.importe * showroom.comision / 100),
+                        pedidosRef: factura.pedidos || ''
                     });
                 }
             }
@@ -2481,11 +2639,11 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
 
         data.facturas.sort((a, b) => new Date(a.fechaCobro100) - new Date(b.fechaCobro100)).forEach(item => {
             const moneda = item.factura.moneda || 'EUR';
-            // Línea de factura
             sheetData.push([
                 'FACTURA',
                 item.factura.numero,
                 item.cliente.nombre,
+                item.pedidosRef || item.factura.pedidos || '',
                 formatDate(item.factura.fecha),
                 formatDate(item.fechaCobro100),
                 moneda,
@@ -2494,16 +2652,18 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                 item.comision
             ]);
 
-            // Detalle de cobros
             const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
                 .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
 
             let acumulado = 0;
             cobrosFactura.forEach(cobro => {
+                const pedidosDB = DB.getPedidos();
+                const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
                 acumulado += cobro.importe;
                 sheetData.push([
-                    '  → Cobro',
+                    cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
                     formatDate(cobro.fecha),
+                    pedidoRef ? `(Pedido: ${pedidoRef})` : '',
                     '',
                     '',
                     '',
@@ -2514,17 +2674,17 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                 ]);
             });
 
-            sheetData.push(['']); // Línea vacía entre facturas
+            sheetData.push(['']);
         });
 
         // Encabezados
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
+        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Pedido(s)', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
         sheetData.splice(5, 0, ['']);
 
         // Totales por moneda
         sheetData.push(['']);
         Object.entries(data.totalesPorMoneda).forEach(([moneda, totales]) => {
-            sheetData.push(['', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
+            sheetData.push(['', '', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
@@ -2532,6 +2692,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
             { wch: 12 },  // Tipo
             { wch: 18 },  // Nº Factura / Fecha
             { wch: 30 },  // Cliente
+            { wch: 20 },  // Pedido(s)
             { wch: 15 },  // Fecha Emisión
             { wch: 18 },  // Fecha Cobro 100%
             { wch: 8 },   // Moneda
@@ -2717,6 +2878,7 @@ function verDetalleInforme(informeId) {
                         <tr>
                             <th>Factura</th>
                             <th>Cliente</th>
+                            <th>Pedido(s)</th>
                             <th>Fecha Emisión</th>
                             <th>Fecha Cobro 100%</th>
                             <th>Importe</th>
@@ -2725,31 +2887,35 @@ function verDetalleInforme(informeId) {
                     </thead>
                     <tbody>
         `;
-        
+
         showroomData.facturas.forEach(item => {
+            const pedidosRef = item.pedidosRef || item.factura.pedidos || '-';
             html += `
                 <tr>
                     <td><strong>${item.factura.numero}</strong></td>
                     <td>${item.cliente.nombre}</td>
+                    <td>${pedidosRef}</td>
                     <td>${formatDate(item.factura.fecha)}</td>
                     <td>${formatDate(item.fechaCobro100)}</td>
                     <td>${formatCurrency(item.factura.importe, item.factura.moneda)}</td>
                     <td>${formatCurrency(item.comision, item.factura.moneda)}</td>
                 </tr>
             `;
-            
-            // Mostrar cobros
+
             const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
                 .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-            
+            const pedidosDB = DB.getPedidos();
+
             let acum = 0;
             cobrosFactura.forEach(cobro => {
                 acum += cobro.importe;
+                const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
                 html += `
                     <tr style="background: var(--gray-50); font-size: 13px;">
-                        <td colspan="2" style="padding-left: 40px;">→ Cobro: ${formatDate(cobro.fecha)}</td>
-                        <td></td>
+                        <td colspan="2" style="padding-left: 40px;">→ ${cobro.pedidoId ? 'Anticipo' : 'Cobro'}: ${formatDate(cobro.fecha)}</td>
+                        <td>${pedidoRef ? 'Ped: ' + pedidoRef : ''}</td>
                         <td>Acumulado:</td>
+                        <td></td>
                         <td>${formatCurrency(cobro.importe, cobro.moneda)}</td>
                         <td>${formatCurrency(acum, item.factura.moneda)}${cobro.esAjuste ? ' <span class="badge badge-info">Ajuste</span>' : ''}</td>
                     </tr>
@@ -2842,6 +3008,7 @@ function crearInformeExcelDesdeHistorico(informe) {
                 'FACTURA',
                 item.factura.numero,
                 item.cliente.nombre,
+                item.pedidosRef || item.factura.pedidos || '',
                 formatDate(item.factura.fecha),
                 formatDate(item.fechaCobro100),
                 moneda,
@@ -2852,13 +3019,16 @@ function crearInformeExcelDesdeHistorico(informe) {
 
             const cobrosFactura = cobros.filter(c => c.facturaId === item.factura.id)
                 .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+            const pedidosDB = DB.getPedidos();
 
             let acumulado = 0;
             cobrosFactura.forEach(cobro => {
+                const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
                 acumulado += cobro.importe;
                 sheetData.push([
-                    '  → Cobro',
+                    cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
                     formatDate(cobro.fecha),
+                    pedidoRef ? `(Pedido: ${pedidoRef})` : '',
                     '', '', '', '',
                     cobro.importe,
                     acumulado,
@@ -2869,17 +3039,17 @@ function crearInformeExcelDesdeHistorico(informe) {
             sheetData.push(['']);
         });
 
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
+        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Pedido(s)', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
         sheetData.splice(5, 0, ['']);
 
         sheetData.push(['']);
         Object.entries(tpm).forEach(([moneda, totales]) => {
-            sheetData.push(['', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
+            sheetData.push(['', '', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
-            { wch: 12 }, { wch: 18 }, { wch: 30 }, { wch: 15 },
+            { wch: 12 }, { wch: 18 }, { wch: 30 }, { wch: 20 }, { wch: 15 },
             { wch: 18 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
         ];
         aplicarFormatoNumerosExcel(ws);

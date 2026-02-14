@@ -393,23 +393,36 @@
                 <button class="modal-close" onclick="cerrarModal('modalCobro')">×</button>
             </div>
             <div class="form-group">
+                <label>Aplicar cobro a *</label>
+                <div class="form-row" style="gap: 8px; margin-bottom: 8px;">
+                    <button type="button" id="cobTipoFactura" class="btn btn-primary" onclick="cambiarTipoCobro('factura')" style="flex:1;">Factura</button>
+                    <button type="button" id="cobTipoPedido" class="btn btn-secondary" onclick="cambiarTipoCobro('pedido')" style="flex:1;">Pedido (Anticipo)</button>
+                </div>
+            </div>
+            <div class="form-group" id="cobFacturaGroup">
                 <label for="cobFactura">Factura *</label>
-                <select id="cobFactura" required onchange="mostrarInfoFactura()">
+                <select id="cobFactura" required onchange="mostrarInfoCobro()">
                     <option value="">Seleccionar factura...</option>
+                </select>
+            </div>
+            <div class="form-group" id="cobPedidoGroup" style="display:none;">
+                <label for="cobPedido">Pedido *</label>
+                <select id="cobPedido" onchange="mostrarInfoCobro()">
+                    <option value="">Seleccionar pedido...</option>
                 </select>
             </div>
             <div id="infoFactura" class="info-box" style="display:none;">
                 <div class="info-row">
                     <span style="color: var(--gray-700);">Importe total:</span>
-                    <strong id="infFactTotal">0,00 €</strong>
+                    <strong id="infFactTotal">0,00 EUR</strong>
                 </div>
                 <div class="info-row">
                     <span style="color: var(--gray-700);">Ya cobrado:</span>
-                    <strong id="infFactCobrado">0,00 €</strong>
+                    <strong id="infFactCobrado">0,00 EUR</strong>
                 </div>
                 <div class="info-row">
                     <span style="color: var(--gray-700);">Pendiente:</span>
-                    <strong id="infFactPendiente" style="color: var(--warning);">0,00 €</strong>
+                    <strong id="infFactPendiente" style="color: var(--warning);">0,00 EUR</strong>
                 </div>
             </div>
             <div class="form-row">
