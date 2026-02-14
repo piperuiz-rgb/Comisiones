@@ -349,10 +349,11 @@
                 </select>
             </div>
             <div class="form-group">
-                <label for="facPedidos">Pedido(s) Origen (separados por comas)</label>
-                <input type="text" id="facPedidos" placeholder="Ej: PED001, PED002">
-                <small style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
-                    Pedidos del cliente: <span id="pedidosDisponibles">-</span>
+                <label>Pedido(s) Origen</label>
+                <div id="pedidosCheckboxes" style="margin-bottom: 4px;"></div>
+                <input type="hidden" id="facPedidos">
+                <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
+                    Selecciona un cliente para ver sus pedidos
                 </small>
             </div>
             <div class="form-row">

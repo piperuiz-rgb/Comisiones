@@ -1000,14 +1000,62 @@ function modalFactura(id = null) {
 
 function cargarPedidosCliente() {
     const clienteId = document.getElementById('facCliente').value;
+    const container = document.getElementById('pedidosCheckboxes');
+    const info = document.getElementById('pedidosDisponiblesInfo');
+    const hiddenInput = document.getElementById('facPedidos');
+
     if (!clienteId) {
-        document.getElementById('pedidosDisponibles').textContent = '-';
+        container.innerHTML = '';
+        info.textContent = 'Selecciona un cliente para ver sus pedidos';
+        info.style.display = '';
         return;
     }
-    
+
     const pedidos = DB.getPedidos().filter(p => p.clienteId === clienteId);
-    const numeros = pedidos.map(p => p.numero).join(', ');
-    document.getElementById('pedidosDisponibles').textContent = numeros || 'Ninguno';
+
+    if (pedidos.length === 0) {
+        container.innerHTML = '';
+        info.textContent = 'Este cliente no tiene pedidos registrados';
+        info.style.display = '';
+        return;
+    }
+
+    info.style.display = 'none';
+
+    // Pedidos ya seleccionados (al editar factura)
+    const seleccionados = (hiddenInput.value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+    let html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+    pedidos.forEach(p => {
+        const estado = calcularEstadoPedido(p.id);
+        const checked = seleccionados.includes(p.numero.toLowerCase()) ? 'checked' : '';
+        const anticipoInfo = estado.cobrado > 0 ? ` | Antic: ${formatCurrency(estado.cobrado, p.moneda)}` : '';
+        html += `
+            <label style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--gray-300); border-radius: 8px; cursor: pointer; font-size: 13px; background: ${checked ? 'var(--primary-light)' : 'var(--gray-50)'};">
+                <input type="checkbox" value="${p.numero}" onchange="actualizarPedidosSeleccionados()" ${checked}
+                    style="accent-color: var(--primary);">
+                <strong>${p.numero}</strong>
+                <span style="color: var(--gray-500);">${formatCurrency(p.importe, p.moneda)}${anticipoInfo}</span>
+            </label>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function actualizarPedidosSeleccionados() {
+    const checkboxes = document.querySelectorAll('#pedidosCheckboxes input[type="checkbox"]');
+    const seleccionados = [];
+    checkboxes.forEach(cb => {
+        const label = cb.closest('label');
+        if (cb.checked) {
+            seleccionados.push(cb.value);
+            if (label) label.style.background = 'var(--primary-light)';
+        } else {
+            if (label) label.style.background = 'var(--gray-50)';
+        }
+    });
+    document.getElementById('facPedidos').value = seleccionados.join(', ');
 }
 
 function guardarFactura() {
@@ -1576,23 +1624,73 @@ function modalFactura(id = null) {
         document.getElementById('facVencimiento').valueAsDate = venc;
         document.getElementById('facMoneda').value = 'EUR';
         document.getElementById('facImporte').value = '';
-        document.getElementById('pedidosDisponibles').textContent = '-';
+        document.getElementById('pedidosCheckboxes').innerHTML = '';
+        document.getElementById('pedidosDisponiblesInfo').textContent = 'Selecciona un cliente para ver sus pedidos';
+        document.getElementById('pedidosDisponiblesInfo').style.display = '';
         editandoId = null;
     }
-    
+
     modal.classList.add('visible');
 }
 
 function cargarPedidosCliente() {
     const clienteId = document.getElementById('facCliente').value;
+    const container = document.getElementById('pedidosCheckboxes');
+    const info = document.getElementById('pedidosDisponiblesInfo');
+    const hiddenInput = document.getElementById('facPedidos');
+
     if (!clienteId) {
-        document.getElementById('pedidosDisponibles').textContent = '-';
+        container.innerHTML = '';
+        info.textContent = 'Selecciona un cliente para ver sus pedidos';
+        info.style.display = '';
         return;
     }
-    
+
     const pedidos = DB.getPedidos().filter(p => p.clienteId === clienteId);
-    const numeros = pedidos.map(p => p.numero).join(', ');
-    document.getElementById('pedidosDisponibles').textContent = numeros || 'Ninguno';
+
+    if (pedidos.length === 0) {
+        container.innerHTML = '';
+        info.textContent = 'Este cliente no tiene pedidos registrados';
+        info.style.display = '';
+        return;
+    }
+
+    info.style.display = 'none';
+
+    // Pedidos ya seleccionados (al editar factura)
+    const seleccionados = (hiddenInput.value || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+
+    let html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+    pedidos.forEach(p => {
+        const estado = calcularEstadoPedido(p.id);
+        const checked = seleccionados.includes(p.numero.toLowerCase()) ? 'checked' : '';
+        const anticipoInfo = estado.cobrado > 0 ? ` | Antic: ${formatCurrency(estado.cobrado, p.moneda)}` : '';
+        html += `
+            <label style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--gray-300); border-radius: 8px; cursor: pointer; font-size: 13px; background: ${checked ? 'var(--primary-light)' : 'var(--gray-50)'};">
+                <input type="checkbox" value="${p.numero}" onchange="actualizarPedidosSeleccionados()" ${checked}
+                    style="accent-color: var(--primary);">
+                <strong>${p.numero}</strong>
+                <span style="color: var(--gray-500);">${formatCurrency(p.importe, p.moneda)}${anticipoInfo}</span>
+            </label>
+        `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function actualizarPedidosSeleccionados() {
+    const checkboxes = document.querySelectorAll('#pedidosCheckboxes input[type="checkbox"]');
+    const seleccionados = [];
+    checkboxes.forEach(cb => {
+        const label = cb.closest('label');
+        if (cb.checked) {
+            seleccionados.push(cb.value);
+            if (label) label.style.background = 'var(--primary-light)';
+        } else {
+            if (label) label.style.background = 'var(--gray-50)';
+        }
+    });
+    document.getElementById('facPedidos').value = seleccionados.join(', ');
 }
 
 function guardarFactura() {
