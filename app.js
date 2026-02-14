@@ -1786,44 +1786,163 @@ function importarFacturas(file) {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            
+
             const facturas = DB.getFacturas();
             const clientes = DB.getClientes();
+            const pedidos = DB.getPedidos();
             let importados = 0;
-            
+            const sinPedido = []; // Facturas importadas sin pedido asociado
+            const sinCliente = []; // Filas sin cliente encontrado
+
             // Formato: Número | Cliente | Pedidos | Fecha | Vencimiento | Moneda | Importe
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row[0]) continue;
-                
+
                 const clienteNombre = String(row[1] || '');
                 const cliente = clientes.find(c => c.nombre.toLowerCase() === clienteNombre.toLowerCase());
-                
-                if (cliente) {
-                    facturas.push({
-                        id: generarId(),
-                        numero: String(row[0]),
-                        clienteId: cliente.id,
-                        pedidos: String(row[2] || ''),
-                        fecha: row[3] || new Date().toISOString().split('T')[0],
-                        vencimiento: row[4] || new Date().toISOString().split('T')[0],
-                        moneda: String(row[5] || 'EUR'),
-                        importe: parseFloat(row[6]) || 0,
-                        fechaCreacion: new Date().toISOString()
-                    });
-                    importados++;
+
+                if (!cliente) {
+                    sinCliente.push({ numero: String(row[0]), clienteNombre });
+                    continue;
+                }
+
+                const pedidosStr = String(row[2] || '').trim();
+                const facturaId = generarId();
+
+                facturas.push({
+                    id: facturaId,
+                    numero: String(row[0]),
+                    clienteId: cliente.id,
+                    pedidos: pedidosStr,
+                    fecha: row[3] || new Date().toISOString().split('T')[0],
+                    vencimiento: row[4] || new Date().toISOString().split('T')[0],
+                    moneda: String(row[5] || 'EUR'),
+                    importe: parseFloat(row[6]) || 0,
+                    fechaCreacion: new Date().toISOString()
+                });
+                importados++;
+
+                // Verificar si los pedidos referenciados existen
+                const pedidosCliente = pedidos.filter(p => p.clienteId === cliente.id);
+                if (!pedidosStr && pedidosCliente.length > 0) {
+                    sinPedido.push({ facturaId, numero: String(row[0]), cliente, pedidosCliente });
+                } else if (pedidosStr) {
+                    const refs = pedidosStr.split(',').map(s => s.trim().toLowerCase());
+                    const todosExisten = refs.every(ref =>
+                        pedidosCliente.some(p => p.numero.toLowerCase() === ref)
+                    );
+                    if (!todosExisten && pedidosCliente.length > 0) {
+                        sinPedido.push({ facturaId, numero: String(row[0]), cliente, pedidosCliente, pedidosRef: pedidosStr });
+                    }
                 }
             }
-            
+
             DB.setFacturas(facturas);
             cargarTablaFacturas();
-            showAlert('facturasAlert', `${importados} facturas importadas correctamente`, 'success');
+
+            let msg = `${importados} facturas importadas correctamente.`;
+            if (sinCliente.length > 0) {
+                msg += ` ${sinCliente.length} filas omitidas (cliente no encontrado: ${sinCliente.map(s => s.clienteNombre).join(', ')}).`;
+            }
+            showAlert('facturasAlert', msg, importados > 0 ? 'success' : 'error');
+
+            // Mostrar modal de sugerencias si hay facturas sin pedido
+            if (sinPedido.length > 0) {
+                mostrarModalAsociarPedidos(sinPedido);
+            }
         } catch (error) {
             showAlert('facturasAlert', 'Error al importar: ' + error.message, 'error');
         }
     };
     reader.readAsArrayBuffer(file);
     document.getElementById('importFacturasInput').value = '';
+}
+
+function mostrarModalAsociarPedidos(facturasConSugerencia) {
+    let html = `
+        <div class="modal visible" id="modalAsociarPedidos">
+            <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h3 class="modal-title">Facturas sin pedido asociado</h3>
+                    <button class="modal-close" onclick="document.getElementById('modalAsociarPedidos').remove()">×</button>
+                </div>
+                <p style="margin-bottom: 16px; color: var(--gray-600);">
+                    Las siguientes facturas no tienen pedido asociado o el pedido referenciado no existe.
+                    Puedes asociarlas a un pedido del cliente o dejarlas sin pedido.
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Factura</th>
+                            <th>Cliente</th>
+                            <th>Ref. Actual</th>
+                            <th>Asociar a Pedido</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    facturasConSugerencia.forEach((item, idx) => {
+        const opciones = item.pedidosCliente.map(p =>
+            `<option value="${p.numero}">${p.numero} (${formatCurrency(p.importe, p.moneda)})</option>`
+        ).join('');
+
+        html += `
+            <tr>
+                <td><strong>${item.numero}</strong></td>
+                <td>${item.cliente.nombre}</td>
+                <td>${item.pedidosRef || '<em>vacío</em>'}</td>
+                <td>
+                    <select id="asocPedido_${idx}" data-factura-id="${item.facturaId}" style="width: 100%;">
+                        <option value="">-- Sin pedido --</option>
+                        ${opciones}
+                    </select>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                    </tbody>
+                </table>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="document.getElementById('modalAsociarPedidos').remove()">Ignorar</button>
+                    <button class="btn btn-primary" onclick="guardarAsociacionesPedidos(${facturasConSugerencia.length})">Guardar Asociaciones</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function guardarAsociacionesPedidos(total) {
+    const facturas = DB.getFacturas();
+    let actualizadas = 0;
+
+    for (let i = 0; i < total; i++) {
+        const select = document.getElementById(`asocPedido_${i}`);
+        if (!select) continue;
+        const facturaId = select.dataset.facturaId;
+        const pedidoNum = select.value;
+
+        if (pedidoNum) {
+            const idx = facturas.findIndex(f => f.id === facturaId);
+            if (idx >= 0) {
+                facturas[idx].pedidos = pedidoNum;
+                actualizadas++;
+            }
+        }
+    }
+
+    DB.setFacturas(facturas);
+    cargarTablaFacturas();
+    document.getElementById('modalAsociarPedidos').remove();
+
+    if (actualizadas > 0) {
+        showAlert('facturasAlert', `${actualizadas} factura(s) asociada(s) a pedidos correctamente`, 'success');
+    }
 }
 
 
@@ -2036,41 +2155,176 @@ function importarCobros(file) {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            
+
             const cobros = DB.getCobros();
             const facturas = DB.getFacturas();
+            const clientes = DB.getClientes();
             let importados = 0;
-            
+            const sinAsociar = []; // Cobros que no matchean con ninguna factura
+
             // Formato: Factura | Fecha | Moneda | Importe
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row[0]) continue;
-                
-                const facturaNum = String(row[0]);
-                const factura = facturas.find(f => f.numero.toLowerCase() === facturaNum.toLowerCase());
-                
+
+                const facturaRef = String(row[0]).trim();
+                const fecha = row[1] || new Date().toISOString().split('T')[0];
+                const moneda = String(row[2] || 'EUR');
+                const importe = parseFloat(row[3]) || 0;
+
+                const factura = facturas.find(f => f.numero.toLowerCase() === facturaRef.toLowerCase());
+
                 if (factura) {
                     cobros.push({
                         id: generarId(),
                         facturaId: factura.id,
-                        fecha: row[1] || new Date().toISOString().split('T')[0],
-                        moneda: String(row[2] || 'EUR'),
-                        importe: parseFloat(row[3]) || 0,
+                        fecha, moneda, importe,
                         fechaCreacion: new Date().toISOString()
                     });
                     importados++;
+                } else {
+                    sinAsociar.push({ facturaRef, fecha, moneda, importe });
                 }
             }
-            
+
             DB.setCobros(cobros);
             cargarTablaCobros();
-            showAlert('cobrosAlert', `${importados} cobros importados correctamente`, 'success');
+
+            let msg = `${importados} cobros importados correctamente.`;
+            if (sinAsociar.length > 0) {
+                msg += ` ${sinAsociar.length} cobro(s) sin factura asociada.`;
+            }
+            showAlert('cobrosAlert', msg, importados > 0 ? 'success' : 'error');
+
+            // Mostrar modal de sugerencias si hay cobros sin asociar
+            if (sinAsociar.length > 0) {
+                mostrarModalAsociarCobros(sinAsociar, facturas, clientes);
+            }
         } catch (error) {
             showAlert('cobrosAlert', 'Error al importar: ' + error.message, 'error');
         }
     };
     reader.readAsArrayBuffer(file);
     document.getElementById('importCobrosInput').value = '';
+}
+
+function mostrarModalAsociarCobros(cobrosNoAsociados, facturas, clientes) {
+    // Preparar sugerencias: facturas pendientes de cobro, ordenadas por relevancia
+    const facturasPendientes = facturas.filter(f => {
+        const estado = calcularEstadoFactura(f.id);
+        return estado.porcentaje < 100;
+    }).map(f => {
+        const cliente = clientes.find(c => c.id === f.clienteId);
+        const estado = calcularEstadoFactura(f.id);
+        return { ...f, clienteNombre: cliente ? cliente.nombre : '-', pendiente: estado.pendiente };
+    });
+
+    let html = `
+        <div class="modal visible" id="modalAsociarCobros">
+            <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header">
+                    <h3 class="modal-title">Cobros pendientes de asociar</h3>
+                    <button class="modal-close" onclick="document.getElementById('modalAsociarCobros').remove()">×</button>
+                </div>
+                <p style="margin-bottom: 16px; color: var(--gray-600);">
+                    Los siguientes cobros no coinciden con ninguna factura existente.
+                    Selecciona la factura a la que asociar cada cobro o descártalos.
+                </p>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Ref. Original</th>
+                            <th>Fecha</th>
+                            <th>Importe</th>
+                            <th>Asociar a Factura</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    `;
+
+    cobrosNoAsociados.forEach((cobro, idx) => {
+        // Ordenar sugerencias: primero facturas con importe similar, luego por moneda
+        const sugerencias = [...facturasPendientes]
+            .sort((a, b) => {
+                // Priorizar misma moneda
+                const monedaA = a.moneda === cobro.moneda ? 0 : 1;
+                const monedaB = b.moneda === cobro.moneda ? 0 : 1;
+                if (monedaA !== monedaB) return monedaA - monedaB;
+                // Luego por cercanía de importe pendiente
+                return Math.abs(a.pendiente - cobro.importe) - Math.abs(b.pendiente - cobro.importe);
+            });
+
+        const opciones = sugerencias.map(f =>
+            `<option value="${f.id}">${f.numero} - ${f.clienteNombre} (Pte: ${formatCurrency(f.pendiente, f.moneda)})</option>`
+        ).join('');
+
+        html += `
+            <tr>
+                <td><strong>${cobro.facturaRef}</strong></td>
+                <td>${formatDate(cobro.fecha)}</td>
+                <td>${formatCurrency(cobro.importe, cobro.moneda)}</td>
+                <td>
+                    <select id="asocCobro_${idx}" style="width: 100%;"
+                        data-fecha="${cobro.fecha}" data-moneda="${cobro.moneda}" data-importe="${cobro.importe}">
+                        <option value="">-- No asociar --</option>
+                        ${opciones}
+                    </select>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                    </tbody>
+                </table>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="document.getElementById('modalAsociarCobros').remove()">Descartar Todos</button>
+                    <button class="btn btn-primary" onclick="guardarAsociacionesCobros(${cobrosNoAsociados.length})">Guardar Asociaciones</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', html);
+}
+
+function guardarAsociacionesCobros(total) {
+    const cobros = DB.getCobros();
+    let asociados = 0;
+
+    for (let i = 0; i < total; i++) {
+        const select = document.getElementById(`asocCobro_${i}`);
+        if (!select || !select.value) continue;
+
+        const facturaId = select.value;
+        const fecha = select.dataset.fecha;
+        const moneda = select.dataset.moneda;
+        const importe = parseFloat(select.dataset.importe);
+
+        // Verificar que no exceda el pendiente
+        const estado = calcularEstadoFactura(facturaId);
+        if (importe > estado.pendiente) {
+            alert(`El cobro de ${formatCurrency(importe, moneda)} excede el pendiente de la factura (${formatCurrency(estado.pendiente, moneda)}). Se omite.`);
+            continue;
+        }
+
+        cobros.push({
+            id: generarId(),
+            facturaId,
+            fecha, moneda, importe,
+            fechaCreacion: new Date().toISOString()
+        });
+        asociados++;
+    }
+
+    DB.setCobros(cobros);
+    cargarTablaCobros();
+    cargarDashboard();
+    document.getElementById('modalAsociarCobros').remove();
+
+    if (asociados > 0) {
+        showAlert('cobrosAlert', `${asociados} cobro(s) asociado(s) correctamente`, 'success');
+    }
 }
 
 // ========================================
@@ -2144,20 +2398,23 @@ function generarInforme() {
         return;
     }
     
-    // Agrupar por showroom
+    // Agrupar por showroom con totales por moneda
     const porShowroom = {};
     facturasComision.forEach(item => {
+        const moneda = item.factura.moneda || 'EUR';
         if (!porShowroom[item.showroom.id]) {
             porShowroom[item.showroom.id] = {
                 showroom: item.showroom,
                 facturas: [],
-                totalFacturado: 0,
-                totalComision: 0
+                totalesPorMoneda: {}
             };
         }
+        if (!porShowroom[item.showroom.id].totalesPorMoneda[moneda]) {
+            porShowroom[item.showroom.id].totalesPorMoneda[moneda] = { facturado: 0, comision: 0 };
+        }
         porShowroom[item.showroom.id].facturas.push(item);
-        porShowroom[item.showroom.id].totalFacturado += item.factura.importe;
-        porShowroom[item.showroom.id].totalComision += item.comision;
+        porShowroom[item.showroom.id].totalesPorMoneda[moneda].facturado += item.factura.importe;
+        porShowroom[item.showroom.id].totalesPorMoneda[moneda].comision += item.comision;
     });
     
     // Generar Excel
@@ -2166,7 +2423,7 @@ function generarInforme() {
 
 function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
     const wb = XLSX.utils.book_new();
-    
+
     // Hoja resumen
     const resumenData = [
         ['INFORME DE COMISIONES DE SHOWROOMS'],
@@ -2174,29 +2431,35 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
         [''],
         [`Periodo: ${formatDate(fechaInicio)} - ${formatDate(fechaFin)}`],
         [''],
-        ['Showroom', 'Total Facturado', '% Comisión', 'Comisión Total'],
+        ['Showroom', 'Moneda', 'Total Facturado', '% Comisión', 'Comisión Total'],
     ];
-    
-    let totalGeneral = 0;
-    let totalComisionGeneral = 0;
-    
+
+    const totalesGenerales = {};
+
     Object.values(porShowroom).forEach(data => {
-        resumenData.push([
-            data.showroom.nombre,
-            data.totalFacturado,
-            data.showroom.comision + '%',
-            data.totalComision
-        ]);
-        totalGeneral += data.totalFacturado;
-        totalComisionGeneral += data.totalComision;
+        Object.entries(data.totalesPorMoneda).forEach(([moneda, totales]) => {
+            resumenData.push([
+                data.showroom.nombre,
+                moneda,
+                totales.facturado,
+                data.showroom.comision + '%',
+                totales.comision
+            ]);
+            if (!totalesGenerales[moneda]) totalesGenerales[moneda] = { facturado: 0, comision: 0 };
+            totalesGenerales[moneda].facturado += totales.facturado;
+            totalesGenerales[moneda].comision += totales.comision;
+        });
     });
-    
+
     resumenData.push(['']);
-    resumenData.push(['TOTAL', totalGeneral, '', totalComisionGeneral]);
+    Object.entries(totalesGenerales).forEach(([moneda, totales]) => {
+        resumenData.push(['TOTAL', moneda, totales.facturado, '', totales.comision]);
+    });
     
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     wsResumen['!cols'] = [
         { wch: 30 },
+        { wch: 8 },
         { wch: 18 },
         { wch: 12 },
         { wch: 18 }
@@ -2217,6 +2480,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
         ];
 
         data.facturas.sort((a, b) => new Date(a.fechaCobro100) - new Date(b.fechaCobro100)).forEach(item => {
+            const moneda = item.factura.moneda || 'EUR';
             // Línea de factura
             sheetData.push([
                 'FACTURA',
@@ -2224,6 +2488,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                 item.cliente.nombre,
                 formatDate(item.factura.fecha),
                 formatDate(item.fechaCobro100),
+                moneda,
                 item.factura.importe,
                 item.totalCobrado,
                 item.comision
@@ -2242,6 +2507,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                     '',
                     '',
                     '',
+                    '',
                     cobro.importe,
                     acumulado,
                     cobro.esAjuste ? 'Ajuste' : ''
@@ -2251,12 +2517,15 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
             sheetData.push(['']); // Línea vacía entre facturas
         });
 
-        // Encabezados (los ponemos después de calcular los datos para que queden arriba del detalle)
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
+        // Encabezados
+        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
         sheetData.splice(5, 0, ['']);
 
+        // Totales por moneda
         sheetData.push(['']);
-        sheetData.push(['', '', '', '', 'TOTAL', data.totalFacturado, '', data.totalComision]);
+        Object.entries(data.totalesPorMoneda).forEach(([moneda, totales]) => {
+            sheetData.push(['', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
+        });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
@@ -2265,6 +2534,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
             { wch: 30 },  // Cliente
             { wch: 15 },  // Fecha Emisión
             { wch: 18 },  // Fecha Cobro 100%
+            { wch: 8 },   // Moneda
             { wch: 18 },  // Importe Factura
             { wch: 18 },  // Total Cobrado / Acumulado
             { wch: 18 }   // Comisión / Estado
@@ -2286,15 +2556,13 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
         showroomId: document.getElementById('infShowroom').value || 'todos',
         showrooms: Object.values(porShowroom).map(d => ({
             nombre: d.showroom.nombre,
-            totalFacturado: d.totalFacturado,
-            totalComision: d.totalComision,
+            totalesPorMoneda: d.totalesPorMoneda,
             numFacturas: d.facturas.length
         })),
-        totalGeneral,
-        totalComisionGeneral,
+        totalesGenerales,
         filename,
         fechaGeneracion: new Date().toISOString(),
-        detalleCompleto: porShowroom // Guardar todo el detalle
+        detalleCompleto: porShowroom
     };
     
     DB.addHistoricoInforme(informeData);
@@ -2351,14 +2619,19 @@ function cargarHistoricoInformes() {
         const showroomNombres = informe.showrooms.map(s => s.nombre).join(', ');
         const numFacturas = informe.showrooms.reduce((sum, s) => sum + s.numFacturas, 0);
         const showroomBusqueda = showroomNombres.toLowerCase();
-        
+
+        // Compatibilidad: informes antiguos con totalGeneral / nuevos con totalesGenerales
+        const totGen = informe.totalesGenerales || { EUR: { facturado: informe.totalGeneral || 0, comision: informe.totalComisionGeneral || 0 } };
+        const totalFactHTML = Object.entries(totGen).map(([m, t]) => formatCurrency(t.facturado, m)).join(' + ');
+        const totalComHTML = Object.entries(totGen).map(([m, t]) => formatCurrency(t.comision, m)).join(' + ');
+
         html += `
             <tr data-showroom="${informe.showroomId}" data-busqueda="${informe.fechaInicio} ${informe.fechaFin} ${showroomBusqueda}">
                 <td>${fecha.toLocaleString('es-ES')}</td>
                 <td><strong>${formatDate(informe.fechaInicio)} - ${formatDate(informe.fechaFin)}</strong></td>
                 <td>${showroomNombres}</td>
-                <td>${formatCurrency(informe.totalGeneral, 'EUR')}</td>
-                <td>${formatCurrency(informe.totalComisionGeneral, 'EUR')}</td>
+                <td>${totalFactHTML}</td>
+                <td>${totalComHTML}</td>
                 <td>${numFacturas}</td>
                 <td>
                     <div class="actions">
@@ -2418,8 +2691,12 @@ function verDetalleInforme(informeId) {
                 <div style="margin-bottom: 24px;">
                     <strong>Periodo:</strong> ${formatDate(informe.fechaInicio)} - ${formatDate(informe.fechaFin)}<br>
                     <strong>Generado:</strong> ${new Date(informe.fechaGeneracion).toLocaleString('es-ES')}<br>
-                    <strong>Total Facturado:</strong> ${formatCurrency(informe.totalGeneral, 'EUR')}<br>
-                    <strong>Total Comisión:</strong> ${formatCurrency(informe.totalComisionGeneral, 'EUR')}
+                    ${(() => {
+                        const totGen = informe.totalesGenerales || { EUR: { facturado: informe.totalGeneral || 0, comision: informe.totalComisionGeneral || 0 } };
+                        return Object.entries(totGen).map(([m, t]) =>
+                            `<strong>Total Facturado (${m}):</strong> ${formatCurrency(t.facturado, m)} | <strong>Comisión:</strong> ${formatCurrency(t.comision, m)}`
+                        ).join('<br>');
+                    })()}
                 </div>
     `;
     
@@ -2428,8 +2705,12 @@ function verDetalleInforme(informeId) {
             <div class="card" style="margin-bottom: 24px;">
                 <h4 style="margin-bottom: 16px; color: var(--primary);">${showroomData.showroom.nombre} - ${showroomData.showroom.comision}%</h4>
                 <div style="margin-bottom: 16px;">
-                    <strong>Total:</strong> ${formatCurrency(showroomData.totalFacturado, 'EUR')} | 
-                    <strong>Comisión:</strong> ${formatCurrency(showroomData.totalComision, 'EUR')}
+                    ${(() => {
+                        const tpm = showroomData.totalesPorMoneda || { EUR: { facturado: showroomData.totalFacturado || 0, comision: showroomData.totalComision || 0 } };
+                        return Object.entries(tpm).map(([m, t]) =>
+                            `<strong>Total (${m}):</strong> ${formatCurrency(t.facturado, m)} | <strong>Comisión:</strong> ${formatCurrency(t.comision, m)}`
+                        ).join(' &nbsp;|&nbsp; ');
+                    })()}
                 </div>
                 <table>
                     <thead>
@@ -2453,7 +2734,7 @@ function verDetalleInforme(informeId) {
                     <td>${formatDate(item.factura.fecha)}</td>
                     <td>${formatDate(item.fechaCobro100)}</td>
                     <td>${formatCurrency(item.factura.importe, item.factura.moneda)}</td>
-                    <td>${formatCurrency(item.comision, 'EUR')}</td>
+                    <td>${formatCurrency(item.comision, item.factura.moneda)}</td>
                 </tr>
             `;
             
@@ -2505,8 +2786,8 @@ function redescargarInforme(informeId) {
 
 function crearInformeExcelDesdeHistorico(informe) {
     const wb = XLSX.utils.book_new();
-    
-    // Hoja resumen
+
+    // Hoja resumen - compatible con formato antiguo y nuevo
     const resumenData = [
         ['INFORME DE COMISIONES DE SHOWROOMS'],
         ['Charo Ruiz Ibiza'],
@@ -2514,24 +2795,32 @@ function crearInformeExcelDesdeHistorico(informe) {
         [`Periodo: ${formatDate(informe.fechaInicio)} - ${formatDate(informe.fechaFin)}`],
         [`Generado: ${new Date(informe.fechaGeneracion).toLocaleDateString('es-ES')}`],
         [''],
-        ['Showroom', 'Total Facturado', '% Comisión', 'Comisión Total'],
+        ['Showroom', 'Moneda', 'Total Facturado', '% Comisión', 'Comisión Total'],
     ];
-    
+
+    const totGen = informe.totalesGenerales || { EUR: { facturado: informe.totalGeneral || 0, comision: informe.totalComisionGeneral || 0 } };
+
     informe.showrooms.forEach(s => {
         const showroomData = Object.values(informe.detalleCompleto).find(d => d.showroom.nombre === s.nombre);
-        resumenData.push([
-            s.nombre,
-            s.totalFacturado,
-            showroomData ? showroomData.showroom.comision + '%' : '',
-            s.totalComision
-        ]);
+        const tpm = s.totalesPorMoneda || { EUR: { facturado: s.totalFacturado || 0, comision: s.totalComision || 0 } };
+        Object.entries(tpm).forEach(([moneda, totales]) => {
+            resumenData.push([
+                s.nombre,
+                moneda,
+                totales.facturado,
+                showroomData ? showroomData.showroom.comision + '%' : '',
+                totales.comision
+            ]);
+        });
     });
-    
+
     resumenData.push(['']);
-    resumenData.push(['TOTAL', informe.totalGeneral, '', informe.totalComisionGeneral]);
-    
+    Object.entries(totGen).forEach(([moneda, totales]) => {
+        resumenData.push(['TOTAL', moneda, totales.facturado, '', totales.comision]);
+    });
+
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
-    wsResumen['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 12 }, { wch: 18 }];
+    wsResumen['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 18 }, { wch: 12 }, { wch: 18 }];
     aplicarFormatoNumerosExcel(wsResumen);
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
 
@@ -2539,6 +2828,7 @@ function crearInformeExcelDesdeHistorico(informe) {
     const cobros = DB.getCobros();
 
     Object.values(informe.detalleCompleto).forEach(data => {
+        const tpm = data.totalesPorMoneda || { EUR: { facturado: data.totalFacturado || 0, comision: data.totalComision || 0 } };
         const sheetData = [
             [`COMISIONES - ${data.showroom.nombre}`],
             [`Periodo: ${formatDate(informe.fechaInicio)} - ${formatDate(informe.fechaFin)}`],
@@ -2547,12 +2837,14 @@ function crearInformeExcelDesdeHistorico(informe) {
         ];
 
         data.facturas.forEach(item => {
+            const moneda = item.factura.moneda || 'EUR';
             sheetData.push([
                 'FACTURA',
                 item.factura.numero,
                 item.cliente.nombre,
                 formatDate(item.factura.fecha),
                 formatDate(item.fechaCobro100),
+                moneda,
                 item.factura.importe,
                 item.totalCobrado,
                 item.comision
@@ -2567,9 +2859,7 @@ function crearInformeExcelDesdeHistorico(informe) {
                 sheetData.push([
                     '  → Cobro',
                     formatDate(cobro.fecha),
-                    '',
-                    '',
-                    '',
+                    '', '', '', '',
                     cobro.importe,
                     acumulado,
                     cobro.esAjuste ? 'Ajuste' : ''
@@ -2579,22 +2869,24 @@ function crearInformeExcelDesdeHistorico(informe) {
             sheetData.push(['']);
         });
 
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
+        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Fecha Emisión', 'Fecha Cobro 100%', 'Moneda', 'Importe Factura', 'Total Cobrado', 'Comisión / Estado']);
         sheetData.splice(5, 0, ['']);
 
         sheetData.push(['']);
-        sheetData.push(['', '', '', '', 'TOTAL', data.totalFacturado, '', data.totalComision]);
+        Object.entries(tpm).forEach(([moneda, totales]) => {
+            sheetData.push(['', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
+        });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
             { wch: 12 }, { wch: 18 }, { wch: 30 }, { wch: 15 },
-            { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
+            { wch: 18 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
         ];
         aplicarFormatoNumerosExcel(ws);
 
         XLSX.utils.book_append_sheet(wb, ws, data.showroom.nombre.substring(0, 30));
     });
-    
+
     XLSX.writeFile(wb, informe.filename);
 }
 
