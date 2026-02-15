@@ -482,8 +482,11 @@ function cargarDashboard() {
     }
 
     // Cargar secciones adicionales del dashboard
+    cargarKPIs();
+    cargarAlertasVencimiento();
     cargarComisionesProyectadas();
     cargarAgingReport();
+    renderDashboardCharts();
 }
 
 // ========================================
@@ -567,12 +570,21 @@ function cargarTablaShowrooms() {
         return;
     }
 
-    let html = '<table><thead><tr><th>Nombre</th><th>% Comisión</th><th>Idioma Informe</th><th>Acciones</th></tr></thead><tbody>';
+    let html = `<div class="filter-bar">
+        <input type="text" id="buscarShowroom" placeholder="Buscar showroom...">
+    </div>`;
+
+    html += `<table><thead><tr>
+        <th class="sortable" data-col="nombre" onclick="ordenarTabla('showroomsTableBody','nombre','text')">Nombre</th>
+        <th class="sortable" data-col="comision" onclick="ordenarTabla('showroomsTableBody','comision','number')">% Comisi&oacute;n</th>
+        <th>Idioma Informe</th>
+        <th>Acciones</th>
+    </tr></thead><tbody id="showroomsTableBody">`;
 
     showrooms.forEach(show => {
         const idiomaLabel = (show.idioma || 'es') === 'en' ? 'EN' : 'ES';
         html += `
-            <tr>
+            <tr data-sort-key="1" data-sort-nombre="${show.nombre}" data-sort-comision="${show.comision}" data-nombre="${show.nombre.toLowerCase()}">
                 <td><strong>${show.nombre}</strong></td>
                 <td>${show.comision}%</td>
                 <td><span class="badge badge-info">${idiomaLabel}</span></td>
@@ -588,6 +600,13 @@ function cargarTablaShowrooms() {
 
     html += '</tbody></table>';
     container.innerHTML = html;
+
+    document.getElementById('buscarShowroom').addEventListener('input', function() {
+        const q = this.value.toLowerCase();
+        document.querySelectorAll('#showroomsTableBody tr').forEach(r => {
+            r.style.display = r.getAttribute('data-nombre').includes(q) ? '' : 'none';
+        });
+    });
 }
 
 function eliminarShowroom(id) {
@@ -1411,20 +1430,33 @@ function cargarTablaClientes() {
     const clientes = DB.getClientes();
     const showrooms = DB.getShowrooms();
     const container = document.getElementById('clientesTable');
-    
+
     if (clientes.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="empty-icon">C</div><p>No hay clientes registrados</p></div>';
         return;
     }
-    
-    let html = '<table><thead><tr><th>Nombre</th><th>Showroom</th><th>Acciones</th></tr></thead><tbody>';
-    
+
+    let html = `<div class="filter-bar">
+        <input type="text" id="buscarCliente" placeholder="Buscar cliente...">
+        <select id="filtroShowroomCliente">
+            <option value="">Todos los showrooms</option>
+            ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+        </select>
+    </div>`;
+
+    html += `<table><thead><tr>
+        <th class="sortable" data-col="nombre" onclick="ordenarTabla('clientesTableBody','nombre','text')">Nombre</th>
+        <th class="sortable" data-col="showroom" onclick="ordenarTabla('clientesTableBody','showroom','text')">Showroom</th>
+        <th>Acciones</th>
+    </tr></thead><tbody id="clientesTableBody">`;
+
     clientes.forEach(cliente => {
         const showroom = showrooms.find(s => s.id === cliente.showroomId);
+        const showNombre = showroom ? showroom.nombre : '-';
         html += `
-            <tr>
+            <tr data-sort-key="1" data-sort-nombre="${cliente.nombre}" data-sort-showroom="${showNombre}" data-nombre="${cliente.nombre.toLowerCase()}" data-showroom="${showroom ? showroom.id : ''}">
                 <td><strong>${cliente.nombre}</strong></td>
-                <td>${showroom ? showroom.nombre : '-'}</td>
+                <td>${showNombre}</td>
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-icon" onclick="modalCliente('${cliente.id}')">Edit</button>
@@ -1434,9 +1466,21 @@ function cargarTablaClientes() {
             </tr>
         `;
     });
-    
+
     html += '</tbody></table>';
     container.innerHTML = html;
+
+    const filtrarClientes = () => {
+        const q = document.getElementById('buscarCliente').value.toLowerCase();
+        const showFiltro = document.getElementById('filtroShowroomCliente').value;
+        document.querySelectorAll('#clientesTableBody tr').forEach(r => {
+            const coincideNombre = r.getAttribute('data-nombre').includes(q);
+            const coincideShow = !showFiltro || r.getAttribute('data-showroom') === showFiltro;
+            r.style.display = (coincideNombre && coincideShow) ? '' : 'none';
+        });
+    };
+    document.getElementById('buscarCliente').addEventListener('input', filtrarClientes);
+    document.getElementById('filtroShowroomCliente').addEventListener('change', filtrarClientes);
 }
 
 function eliminarCliente(id) {
@@ -1620,29 +1664,33 @@ function cargarTablaPedidos() {
         return;
     }
     
-    // Controles de filtro
-    let html = `
-        <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-            <input type="text" id="buscarPedido" placeholder="Buscar pedido..." style="flex: 1; min-width: 200px;">
-            <select id="filtroClientePedido" style="min-width: 200px;">
-                <option value="">Todos los clientes</option>
-                ${clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
-            </select>
-            <select id="filtroShowroomPedido" style="min-width: 200px;">
-                <option value="">Todos los showrooms</option>
-                ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-            </select>
-        </div>
-    `;
-    
-    html += '<table><thead><tr><th>Nº Pedido</th><th>Cliente</th><th>Showroom</th><th>Fecha</th><th>Importe</th><th>Acciones</th></tr></thead><tbody id="pedidosTableBody">';
-    
+    let html = `<div class="filter-bar">
+        <input type="text" id="buscarPedido" placeholder="Buscar pedido...">
+        <select id="filtroClientePedido">
+            <option value="">Todos los clientes</option>
+            ${clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
+        </select>
+        <select id="filtroShowroomPedido">
+            <option value="">Todos los showrooms</option>
+            ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+        </select>
+    </div>`;
+
+    html += `<table><thead><tr>
+        <th class="sortable" data-col="numero" onclick="ordenarTabla('pedidosTableBody','numero','text')">N&ordm; Pedido</th>
+        <th class="sortable" data-col="cliente" onclick="ordenarTabla('pedidosTableBody','cliente','text')">Cliente</th>
+        <th class="sortable" data-col="showroom" onclick="ordenarTabla('pedidosTableBody','showroom','text')">Showroom</th>
+        <th class="sortable" data-col="fecha" onclick="ordenarTabla('pedidosTableBody','fecha','date')">Fecha</th>
+        <th class="sortable" data-col="importe" onclick="ordenarTabla('pedidosTableBody','importe','number')">Importe</th>
+        <th>Acciones</th>
+    </tr></thead><tbody id="pedidosTableBody">`;
+
     pedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(pedido => {
         const cliente = clientes.find(c => c.id === pedido.clienteId);
         const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
-        
+
         html += `
-            <tr data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}">
+            <tr data-sort-key="1" data-sort-numero="${pedido.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${pedido.fecha}" data-sort-importe="${pedido.importe}" data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}">
                 <td><strong>${pedido.numero}</strong></td>
                 <td>${cliente ? cliente.nombre : '-'}</td>
                 <td>${showroom ? showroom.nombre : '-'}</td>
@@ -1784,6 +1832,7 @@ function modalFactura(id = null) {
         document.getElementById('facVencimiento').value = factura.vencimiento;
         document.getElementById('facMoneda').value = factura.moneda;
         document.getElementById('facImporte').value = factura.esAbono ? Math.abs(factura.importe) : factura.importe;
+        document.getElementById('facNotas').value = factura.notas || '';
         cambiarTipoFactura(factura.esAbono ? 'abono' : 'factura');
         cargarPedidosCliente();
         cargarFacturasAbonables();
@@ -1800,6 +1849,7 @@ function modalFactura(id = null) {
         document.getElementById('facVencimiento').valueAsDate = venc;
         document.getElementById('facMoneda').value = 'EUR';
         document.getElementById('facImporte').value = '';
+        document.getElementById('facNotas').value = '';
         cambiarTipoFactura('factura');
         document.getElementById('pedidosCheckboxes').innerHTML = '';
         document.getElementById('pedidosDisponiblesInfo').textContent = 'Selecciona un cliente para ver sus pedidos';
@@ -1880,6 +1930,7 @@ function guardarFactura() {
     const vencimiento = document.getElementById('facVencimiento').value;
     const moneda = document.getElementById('facMoneda').value;
     let importe = parseFloat(document.getElementById('facImporte').value);
+    const notas = document.getElementById('facNotas').value.trim();
     const esAbono = tipoFacturaModal === 'abono';
 
     if (!numero || !clienteId || !fecha || !vencimiento || isNaN(importe)) {
@@ -1910,7 +1961,7 @@ function guardarFactura() {
     if (editandoId) {
         facturaId = editandoId;
         const index = facturas.findIndex(f => f.id === editandoId);
-        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, facturasAbonadas: facturasAbonadasStr, fecha, vencimiento, moneda, importe, esAbono };
+        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, facturasAbonadas: facturasAbonadasStr, fecha, vencimiento, moneda, importe, esAbono, notas };
     } else {
         facturaId = generarId();
         facturas.push({
@@ -1919,7 +1970,7 @@ function guardarFactura() {
             pedidos: pedidosStr,
             facturasAbonadas: facturasAbonadasStr,
             fecha, vencimiento, moneda, importe,
-            esAbono,
+            esAbono, notas,
             fechaCreacion: new Date().toISOString()
         });
     }
@@ -1972,41 +2023,49 @@ function cargarTablaFacturas() {
         return;
     }
     
-    // Añadir controles de filtro y búsqueda
-    let html = `
-        <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-            <input type="text" id="buscarFactura" placeholder="Buscar factura..." style="flex: 1; min-width: 200px;">
-            <select id="filtroClienteFactura" style="min-width: 200px;">
-                <option value="">Todos los clientes</option>
-                ${clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
-            </select>
-            <select id="filtroShowroomFactura" style="min-width: 200px;">
-                <option value="">Todos los showrooms</option>
-                ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-            </select>
-            <select id="filtroEstadoFactura" style="min-width: 150px;">
-                <option value="">Todos los estados</option>
-                <option value="pendiente">Pendiente</option>
-                <option value="parcial">Parcial</option>
-                <option value="cobrada">Cobrada</option>
-            </select>
-        </div>
-    `;
-    
-    html += '<table><thead><tr><th>Nº Factura</th><th>Cliente</th><th>Showroom</th><th>Fecha</th><th>Vencimiento</th><th>Importe</th><th>Cobrado</th><th>Pendiente</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="facturasTableBody">';
-    
+    let html = `<div class="filter-bar">
+        <input type="text" id="buscarFactura" placeholder="Buscar factura...">
+        <select id="filtroClienteFactura">
+            <option value="">Todos los clientes</option>
+            ${clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
+        </select>
+        <select id="filtroShowroomFactura">
+            <option value="">Todos los showrooms</option>
+            ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+        </select>
+        <select id="filtroEstadoFactura">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="parcial">Parcial</option>
+            <option value="cobrada">Cobrada</option>
+        </select>
+    </div>`;
+
+    html += `<table><thead><tr>
+        <th class="sortable" data-col="numero" onclick="ordenarTabla('facturasTableBody','numero','text')">N&ordm; Factura</th>
+        <th class="sortable" data-col="cliente" onclick="ordenarTabla('facturasTableBody','cliente','text')">Cliente</th>
+        <th class="sortable" data-col="showroom" onclick="ordenarTabla('facturasTableBody','showroom','text')">Showroom</th>
+        <th class="sortable" data-col="fecha" onclick="ordenarTabla('facturasTableBody','fecha','date')">Fecha</th>
+        <th class="sortable" data-col="vencimiento" onclick="ordenarTabla('facturasTableBody','vencimiento','date')">Vencimiento</th>
+        <th class="sortable" data-col="importe" onclick="ordenarTabla('facturasTableBody','importe','number')">Importe</th>
+        <th class="sortable" data-col="cobrado" onclick="ordenarTabla('facturasTableBody','cobrado','number')">Cobrado</th>
+        <th class="sortable" data-col="pendiente" onclick="ordenarTabla('facturasTableBody','pendiente','number')">Pendiente</th>
+        <th>Estado</th>
+        <th>Acciones</th>
+    </tr></thead><tbody id="facturasTableBody">`;
+
     facturas.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(factura => {
         const cliente = clientes.find(c => c.id === factura.clienteId);
         const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
         const estado = calcularEstadoFactura(factura.id);
         const cobrosFactura = cobros.filter(c => c.facturaId === factura.id).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-        
+
         const estadoTexto = estado.cobrado >= factura.importe ? 'cobrada' : estado.cobrado > 0 ? 'parcial' : 'pendiente';
         const badgeClass = estadoTexto === 'cobrada' ? 'success' : estadoTexto === 'parcial' ? 'warning' : 'danger';
         const badgeText = estadoTexto === 'cobrada' ? 'Cobrada' : estadoTexto === 'parcial' ? 'Parcial' : 'Pendiente';
-        
+
         html += `
-            <tr data-cliente="${factura.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-estado="${estadoTexto}" data-numero="${factura.numero.toLowerCase()}">
+            <tr data-sort-key="1" data-sort-numero="${factura.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${factura.fecha}" data-sort-vencimiento="${factura.vencimiento || ''}" data-sort-importe="${factura.importe}" data-sort-cobrado="${estado.cobrado}" data-sort-pendiente="${estado.pendiente}" data-cliente="${factura.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-estado="${estadoTexto}" data-numero="${factura.numero.toLowerCase()}">
                 <td>
                     <strong>${factura.numero}</strong>
                     ${factura.esAbono ? ' <span class="badge badge-danger" style="font-size: 10px;">ABONO</span>' : ''}
@@ -2464,6 +2523,7 @@ function modalCobro(id = null) {
         document.getElementById('cobFecha').value = cobro.fecha;
         document.getElementById('cobMoneda').value = cobro.moneda;
         document.getElementById('cobImporte').value = cobro.importe;
+        document.getElementById('cobNotas').value = cobro.notas || '';
         mostrarInfoCobro();
         editandoId = id;
     } else {
@@ -2474,6 +2534,7 @@ function modalCobro(id = null) {
         document.getElementById('cobFecha').valueAsDate = new Date();
         document.getElementById('cobMoneda').value = 'EUR';
         document.getElementById('cobImporte').value = '';
+        document.getElementById('cobNotas').value = '';
         document.getElementById('infoFactura').style.display = 'none';
         editandoId = null;
     }
@@ -2518,6 +2579,7 @@ function guardarCobro() {
     const fecha = document.getElementById('cobFecha').value;
     const moneda = document.getElementById('cobMoneda').value;
     const importe = parseFloat(document.getElementById('cobImporte').value);
+    const notas = document.getElementById('cobNotas').value.trim();
 
     let facturaId = null;
     let pedidoId = null;
@@ -2556,13 +2618,13 @@ function guardarCobro() {
 
     if (editandoId) {
         const index = cobros.findIndex(c => c.id === editandoId);
-        cobros[index] = { ...cobros[index], facturaId, pedidoId, fecha, moneda, importe };
+        cobros[index] = { ...cobros[index], facturaId, pedidoId, fecha, moneda, importe, notas };
     } else {
         cobros.push({
             id: generarId(),
             facturaId,
             pedidoId,
-            fecha, moneda, importe,
+            fecha, moneda, importe, notas,
             fechaCreacion: new Date().toISOString()
         });
     }
@@ -2626,6 +2688,7 @@ function cargarTablaCobros() {
     const facturas = DB.getFacturas();
     const pedidos = DB.getPedidos();
     const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
     const container = document.getElementById('cobrosTable');
 
     if (cobros.length === 0) {
@@ -2633,12 +2696,35 @@ function cargarTablaCobros() {
         return;
     }
 
-    let html = '<table><thead><tr><th>Fecha</th><th>Aplicado a</th><th>Cliente</th><th>Importe</th><th>Tipo</th><th>Acciones</th></tr></thead><tbody>';
+    let html = `<div class="filter-bar">
+        <input type="text" id="buscarCobro" placeholder="Buscar cobro...">
+        <select id="filtroShowroomCobro">
+            <option value="">Todos los showrooms</option>
+            ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+        </select>
+        <select id="filtroTipoCobro">
+            <option value="">Todos los tipos</option>
+            <option value="factura">Factura</option>
+            <option value="anticipo">Anticipo s/pedido</option>
+            <option value="transferido">Anticipo transferido</option>
+        </select>
+    </div>`;
+
+    html += `<table><thead><tr>
+        <th class="sortable" data-col="fecha" onclick="ordenarTabla('cobrosTableBody','fecha','date')">Fecha</th>
+        <th class="sortable" data-col="referencia" onclick="ordenarTabla('cobrosTableBody','referencia','text')">Aplicado a</th>
+        <th class="sortable" data-col="cliente" onclick="ordenarTabla('cobrosTableBody','cliente','text')">Cliente</th>
+        <th class="sortable" data-col="importe" onclick="ordenarTabla('cobrosTableBody','importe','number')">Importe</th>
+        <th>Tipo</th>
+        <th>Acciones</th>
+    </tr></thead><tbody id="cobrosTableBody">`;
 
     cobros.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(cobro => {
         let referencia = '-';
         let clienteNombre = '-';
         let tipoBadge = '';
+        let tipoFiltro = '';
+        let showroomId = '';
 
         if (cobro.facturaId) {
             const factura = facturas.find(f => f.id === cobro.facturaId);
@@ -2646,22 +2732,35 @@ function cargarTablaCobros() {
                 referencia = factura.numero;
                 const cliente = clientes.find(c => c.id === factura.clienteId);
                 clienteNombre = cliente ? cliente.nombre : '-';
+                if (cliente) {
+                    const show = showrooms.find(s => s.id === cliente.showroomId);
+                    showroomId = show ? show.id : '';
+                }
             }
-            tipoBadge = cobro.pedidoId
-                ? '<span class="badge badge-success">Anticipo transferido</span>'
-                : '<span class="badge badge-info">Factura</span>';
+            if (cobro.pedidoId) {
+                tipoBadge = '<span class="badge badge-success">Anticipo transferido</span>';
+                tipoFiltro = 'transferido';
+            } else {
+                tipoBadge = '<span class="badge badge-info">Factura</span>';
+                tipoFiltro = 'factura';
+            }
         } else if (cobro.pedidoId) {
             const pedido = pedidos.find(p => p.id === cobro.pedidoId);
             if (pedido) {
                 referencia = pedido.numero;
                 const cliente = clientes.find(c => c.id === pedido.clienteId);
                 clienteNombre = cliente ? cliente.nombre : '-';
+                if (cliente) {
+                    const show = showrooms.find(s => s.id === cliente.showroomId);
+                    showroomId = show ? show.id : '';
+                }
             }
             tipoBadge = '<span class="badge badge-warning">Anticipo s/pedido</span>';
+            tipoFiltro = 'anticipo';
         }
 
         html += `
-            <tr>
+            <tr data-sort-key="1" data-sort-fecha="${cobro.fecha}" data-sort-referencia="${referencia}" data-sort-cliente="${clienteNombre}" data-sort-importe="${cobro.importe}" data-showroom="${showroomId}" data-tipo="${tipoFiltro}" data-buscar="${(referencia + ' ' + clienteNombre).toLowerCase()}">
                 <td>${formatDate(cobro.fecha)}</td>
                 <td><strong>${referencia}</strong></td>
                 <td>${clienteNombre}</td>
@@ -2679,6 +2778,21 @@ function cargarTablaCobros() {
 
     html += '</tbody></table>';
     container.innerHTML = html;
+
+    const filtrarCobros = () => {
+        const q = document.getElementById('buscarCobro').value.toLowerCase();
+        const showFiltro = document.getElementById('filtroShowroomCobro').value;
+        const tipoFiltro = document.getElementById('filtroTipoCobro').value;
+        document.querySelectorAll('#cobrosTableBody tr').forEach(r => {
+            const coincideBusqueda = !q || (r.getAttribute('data-buscar') || '').includes(q);
+            const coincideShow = !showFiltro || r.getAttribute('data-showroom') === showFiltro;
+            const coincideTipo = !tipoFiltro || r.getAttribute('data-tipo') === tipoFiltro;
+            r.style.display = (coincideBusqueda && coincideShow && coincideTipo) ? '' : 'none';
+        });
+    };
+    document.getElementById('buscarCobro').addEventListener('input', filtrarCobros);
+    document.getElementById('filtroShowroomCobro').addEventListener('change', filtrarCobros);
+    document.getElementById('filtroTipoCobro').addEventListener('change', filtrarCobros);
 }
 
 function eliminarCobro(id) {
@@ -3811,12 +3925,24 @@ function cargarAgingReport() {
         return;
     }
 
+    // Agrupar totales por moneda para cada tramo
+    const totalesPorMoneda = {};
+    Object.entries(tramos).forEach(([tramo, items]) => {
+        totalesPorMoneda[tramo] = {};
+        items.forEach(item => {
+            const mon = item.moneda || 'EUR';
+            totalesPorMoneda[tramo][mon] = (totalesPorMoneda[tramo][mon] || 0) + item.pendiente;
+        });
+    });
+
     let html = '<div class="stats-grid" style="margin-bottom: 16px;">';
     const colores = { '0-30': 'var(--warning)', '31-60': '#ea580c', '61-90': '#dc2626', '90+': '#991b1b' };
     Object.entries(tramos).forEach(([tramo, items]) => {
+        const totalesMon = Object.entries(totalesPorMoneda[tramo]);
+        const totalStr = totalesMon.map(([mon, val]) => formatCurrency(val, mon)).join(' + ');
         html += `<div class="stat-card" style="border-left-color: ${colores[tramo]};">
-            <div class="stat-label">${tramo} días</div>
-            <div class="stat-value">${formatCurrency(totales[tramo], 'EUR')}</div>
+            <div class="stat-label">${tramo} d&iacute;as</div>
+            <div class="stat-value" style="font-size: ${totalesMon.length > 1 ? '16px' : '24px'};">${totalStr}</div>
             <div style="font-size: 12px; color: var(--gray-500); margin-top: 4px;">${items.length} factura(s)</div>
         </div>`;
     });
@@ -3922,12 +4048,28 @@ function cargarTablaLiquidaciones() {
         return;
     }
 
-    let html = '<table><thead><tr><th>Showroom</th><th>Periodo</th><th>Importe Pagado</th><th>Fecha Pago</th><th>Notas</th><th>Acciones</th></tr></thead><tbody>';
+    let html = `<div class="filter-bar">
+        <input type="text" id="buscarLiquidacion" placeholder="Buscar liquidaci&oacute;n...">
+        <select id="filtroShowroomLiq">
+            <option value="">Todos los showrooms</option>
+            ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
+        </select>
+    </div>`;
+
+    html += `<table><thead><tr>
+        <th class="sortable" data-col="showroom" onclick="ordenarTabla('liquidacionesTableBody','showroom','text')">Showroom</th>
+        <th>Periodo</th>
+        <th class="sortable" data-col="importe" onclick="ordenarTabla('liquidacionesTableBody','importe','number')">Importe Pagado</th>
+        <th class="sortable" data-col="fechaPago" onclick="ordenarTabla('liquidacionesTableBody','fechaPago','date')">Fecha Pago</th>
+        <th>Notas</th>
+        <th>Acciones</th>
+    </tr></thead><tbody id="liquidacionesTableBody">`;
 
     liquidaciones.sort((a, b) => new Date(b.fechaPago) - new Date(a.fechaPago)).forEach(liq => {
         const showroom = showrooms.find(s => s.id === liq.showroomId);
-        html += `<tr>
-            <td><strong>${showroom ? showroom.nombre : '-'}</strong></td>
+        const showNombre = showroom ? showroom.nombre : '-';
+        html += `<tr data-sort-key="1" data-sort-showroom="${showNombre}" data-sort-importe="${liq.importe}" data-sort-fechaPago="${liq.fechaPago}" data-showroom="${liq.showroomId}" data-buscar="${showNombre.toLowerCase()}">
+            <td><strong>${showNombre}</strong></td>
             <td>${formatDate(liq.fechaInicio)} - ${formatDate(liq.fechaFin)}</td>
             <td>${formatCurrency(liq.importe, liq.moneda)}</td>
             <td>${formatDate(liq.fechaPago)}</td>
@@ -3941,6 +4083,18 @@ function cargarTablaLiquidaciones() {
 
     html += '</tbody></table>';
     container.innerHTML = html;
+
+    const filtrarLiq = () => {
+        const q = document.getElementById('buscarLiquidacion').value.toLowerCase();
+        const showFiltro = document.getElementById('filtroShowroomLiq').value;
+        document.querySelectorAll('#liquidacionesTableBody tr').forEach(r => {
+            const coincideBusqueda = !q || (r.getAttribute('data-buscar') || '').includes(q);
+            const coincideShow = !showFiltro || r.getAttribute('data-showroom') === showFiltro;
+            r.style.display = (coincideBusqueda && coincideShow) ? '' : 'none';
+        });
+    };
+    document.getElementById('buscarLiquidacion').addEventListener('input', filtrarLiq);
+    document.getElementById('filtroShowroomLiq').addEventListener('change', filtrarLiq);
 }
 
 function eliminarLiquidacion(id) {
@@ -4108,4 +4262,482 @@ function generarExtractoCliente() {
     html += '</div>';
     document.getElementById('extractoResultado').innerHTML = html;
 }
+
+// ========================================
+// GRÁFICOS DEL DASHBOARD (Chart.js)
+// ========================================
+
+let chartInstances = {};
+
+function destruirCharts() {
+    Object.values(chartInstances).forEach(c => c.destroy());
+    chartInstances = {};
+}
+
+function renderDashboardCharts() {
+    destruirCharts();
+
+    const facturas = DB.getFacturas();
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+    const cobros = DB.getCobros();
+
+    // --- 1. Bar chart: Facturación por Showroom ---
+    const facPorShowroom = {};
+    facturas.filter(f => !f.esAbono).forEach(f => {
+        const cliente = clientes.find(c => c.id === f.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+        const nombre = showroom ? showroom.nombre : 'Sin showroom';
+        facPorShowroom[nombre] = (facPorShowroom[nombre] || 0) + f.importe;
+    });
+
+    const labelsSR = Object.keys(facPorShowroom);
+    const datosSR = Object.values(facPorShowroom);
+    const coloresSR = labelsSR.map((_, i) => {
+        const paleta = ['#1a1a2e', '#0f3460', '#c9a84c', '#059669', '#d97706', '#dc2626', '#7c3aed', '#2563eb'];
+        return paleta[i % paleta.length];
+    });
+
+    const ctx1 = document.getElementById('chartFacturacionShowroom');
+    if (ctx1 && labelsSR.length > 0) {
+        chartInstances.facShowroom = new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: labelsSR,
+                datasets: [{
+                    label: 'Facturado',
+                    data: datosSR,
+                    backgroundColor: coloresSR,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => formatCurrency(ctx.raw, 'EUR')
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (v) => v >= 1000 ? (v/1000).toFixed(0) + 'k' : v,
+                            font: { size: 11 }
+                        },
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        ticks: { font: { size: 11 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+    // --- 2. Donut chart: Estado de Facturas ---
+    let cobradas = 0, parciales = 0, pendientes = 0;
+    facturas.filter(f => !f.esAbono).forEach(f => {
+        const estado = calcularEstadoFactura(f.id);
+        if (estado.porcentaje >= 100) cobradas++;
+        else if (estado.porcentaje > 0) parciales++;
+        else pendientes++;
+    });
+
+    const ctx2 = document.getElementById('chartEstadoFacturas');
+    if (ctx2 && (cobradas + parciales + pendientes) > 0) {
+        chartInstances.estadoFacturas = new Chart(ctx2, {
+            type: 'doughnut',
+            data: {
+                labels: ['Cobradas', 'Parciales', 'Pendientes'],
+                datasets: [{
+                    data: [cobradas, parciales, pendientes],
+                    backgroundColor: ['#059669', '#d97706', '#dc2626'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '60%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { font: { size: 12 }, padding: 16, usePointStyle: true }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.label}: ${ctx.raw} factura(s)`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // --- 3. Line chart: Evolución mensual de cobros (últimos 12 meses) ---
+    const hoy = new Date();
+    const meses = [];
+    const datosCobros = [];
+    const datosFacturado = [];
+
+    for (let i = 11; i >= 0; i--) {
+        const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+        const mesStr = d.toISOString().slice(0, 7); // YYYY-MM
+        const mesLabel = d.toLocaleDateString('es-ES', { month: 'short', year: '2-digit' });
+        meses.push(mesLabel);
+
+        const totalCobros = cobros
+            .filter(c => c.fecha && c.fecha.startsWith(mesStr))
+            .reduce((sum, c) => sum + c.importe, 0);
+        datosCobros.push(totalCobros);
+
+        const totalFacturado = facturas
+            .filter(f => !f.esAbono && f.fecha && f.fecha.startsWith(mesStr))
+            .reduce((sum, f) => sum + f.importe, 0);
+        datosFacturado.push(totalFacturado);
+    }
+
+    const ctx3 = document.getElementById('chartEvolucionCobros');
+    if (ctx3) {
+        chartInstances.evolucionCobros = new Chart(ctx3, {
+            type: 'line',
+            data: {
+                labels: meses,
+                datasets: [
+                    {
+                        label: 'Facturado',
+                        data: datosFacturado,
+                        borderColor: '#1a1a2e',
+                        backgroundColor: 'rgba(26, 26, 46, 0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Cobrado',
+                        data: datosCobros,
+                        borderColor: '#059669',
+                        backgroundColor: 'rgba(5, 150, 105, 0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: { font: { size: 12 }, padding: 16, usePointStyle: true }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.raw, 'EUR')}`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: (v) => v >= 1000 ? (v/1000).toFixed(0) + 'k' : v,
+                            font: { size: 11 }
+                        },
+                        grid: { color: '#f3f4f6' }
+                    },
+                    x: {
+                        ticks: { font: { size: 11 } },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// ========================================
+// SISTEMA DE ORDENACIÓN DE TABLAS
+// ========================================
+
+let sortState = {};
+
+function ordenarTabla(tableBodyId, columna, tipo) {
+    const key = tableBodyId + '_' + columna;
+    const tbody = document.getElementById(tableBodyId);
+    if (!tbody) return;
+
+    // Toggle direction
+    if (sortState[tableBodyId] === key + '_asc') {
+        sortState[tableBodyId] = key + '_desc';
+    } else {
+        sortState[tableBodyId] = key + '_asc';
+    }
+    const asc = sortState[tableBodyId].endsWith('_asc');
+
+    // Update header styles
+    const table = tbody.closest('table');
+    table.querySelectorAll('th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+    });
+    const headers = table.querySelectorAll('th.sortable');
+    headers.forEach(th => {
+        if (th.getAttribute('data-col') === columna) {
+            th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+        }
+    });
+
+    // Get rows (skip detail rows for facturas)
+    const rows = Array.from(tbody.querySelectorAll('tr[data-sort-key]'));
+
+    rows.sort((a, b) => {
+        let va = a.getAttribute('data-sort-' + columna) || '';
+        let vb = b.getAttribute('data-sort-' + columna) || '';
+
+        if (tipo === 'number') {
+            va = parseFloat(va) || 0;
+            vb = parseFloat(vb) || 0;
+        } else if (tipo === 'date') {
+            va = va || '0000-00-00';
+            vb = vb || '0000-00-00';
+        } else {
+            va = va.toLowerCase();
+            vb = vb.toLowerCase();
+        }
+
+        if (va < vb) return asc ? -1 : 1;
+        if (va > vb) return asc ? 1 : -1;
+        return 0;
+    });
+
+    // Reorder DOM
+    rows.forEach(row => {
+        // For facturas, also move the detail row
+        const detailRow = row.nextElementSibling;
+        tbody.appendChild(row);
+        if (detailRow && detailRow.id && detailRow.id.startsWith('detalle-')) {
+            tbody.appendChild(detailRow);
+        }
+    });
+}
+
+// ========================================
+// EXPORTAR PEDIDOS
+// ========================================
+
+function exportarPedidos() {
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+
+    if (pedidos.length === 0) {
+        alert('No hay pedidos para exportar');
+        return;
+    }
+
+    const data = [['Número', 'Cliente', 'Showroom', 'Fecha', 'Moneda', 'Importe']];
+    pedidos.forEach(p => {
+        const cliente = clientes.find(c => c.id === p.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+        data.push([p.numero, cliente ? cliente.nombre : '', showroom ? showroom.nombre : '', p.fecha, p.moneda, p.importe]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+    XLSX.writeFile(wb, 'Pedidos_Charo_Ruiz.xlsx');
+}
+
+// ========================================
+// KPIs FINANCIEROS AVANZADOS
+// ========================================
+
+function cargarKPIs() {
+    const facturas = DB.getFacturas().filter(f => !f.esAbono);
+    const cobros = DB.getCobros();
+    const showrooms = DB.getShowrooms();
+    const clientes = DB.getClientes();
+
+    // DSO (Days Sales Outstanding) - Promedio de días de cobro
+    let totalDias = 0;
+    let facturasConCobro = 0;
+
+    facturas.forEach(f => {
+        const estado = calcularEstadoFactura(f.id);
+        if (estado.porcentaje >= 100) {
+            const cobrosF = cobros.filter(c => c.facturaId === f.id);
+            if (cobrosF.length > 0) {
+                const ultimoCobro = cobrosF.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0];
+                const dias = Math.floor((new Date(ultimoCobro.fecha) - new Date(f.fecha)) / (1000 * 60 * 60 * 24));
+                if (dias >= 0) {
+                    totalDias += dias;
+                    facturasConCobro++;
+                }
+            }
+        }
+    });
+
+    const dso = facturasConCobro > 0 ? Math.round(totalDias / facturasConCobro) : 0;
+
+    // Tasa de cobro global
+    const totalFacturado = facturas.reduce((sum, f) => sum + f.importe, 0);
+    const totalCobrado = facturas.reduce((sum, f) => sum + calcularEstadoFactura(f.id).cobrado, 0);
+    const tasaCobro = totalFacturado > 0 ? ((totalCobrado / totalFacturado) * 100).toFixed(1) : 0;
+
+    // Tasa cobro por showroom
+    const tasaPorShowroom = {};
+    showrooms.forEach(s => {
+        const clienteIds = new Set(clientes.filter(c => c.showroomId === s.id).map(c => c.id));
+        const facShow = facturas.filter(f => clienteIds.has(f.clienteId));
+        const facturadoShow = facShow.reduce((sum, f) => sum + f.importe, 0);
+        const cobradoShow = facShow.reduce((sum, f) => sum + calcularEstadoFactura(f.id).cobrado, 0);
+        if (facturadoShow > 0) {
+            tasaPorShowroom[s.nombre] = ((cobradoShow / facturadoShow) * 100).toFixed(1);
+        }
+    });
+
+    // Render KPI cards
+    const statsGrid = document.getElementById('statsGrid');
+    const kpiHTML = `
+        <div class="stat-card" style="border-left-color: var(--accent);">
+            <div class="stat-label">DSO (D&iacute;as Promedio Cobro)</div>
+            <div class="stat-value">${dso}d</div>
+        </div>
+        <div class="stat-card" style="border-left-color: var(--gold);">
+            <div class="stat-label">Tasa de Cobro</div>
+            <div class="stat-value" style="color: ${parseFloat(tasaCobro) >= 80 ? 'var(--success)' : parseFloat(tasaCobro) >= 50 ? 'var(--warning)' : 'var(--danger)'};">${tasaCobro}%</div>
+        </div>
+    `;
+    statsGrid.innerHTML += kpiHTML;
+}
+
+// ========================================
+// ALERTAS DE VENCIMIENTO PRÓXIMO
+// ========================================
+
+function cargarAlertasVencimiento() {
+    const facturas = DB.getFacturas().filter(f => !f.esAbono);
+    const clientes = DB.getClientes();
+    const hoy = new Date();
+    const en7dias = new Date(hoy.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const proximasVencer = [];
+    facturas.forEach(f => {
+        const estado = calcularEstadoFactura(f.id);
+        if (estado.porcentaje >= 100) return;
+
+        const venc = new Date(f.vencimiento || f.fechaVencimiento);
+        if (venc >= hoy && venc <= en7dias) {
+            const cliente = clientes.find(c => c.id === f.clienteId);
+            const diasRestantes = Math.ceil((venc - hoy) / (1000 * 60 * 60 * 24));
+            proximasVencer.push({
+                numero: f.numero,
+                cliente: cliente ? cliente.nombre : '-',
+                importe: formatCurrency(estado.pendiente, f.moneda),
+                dias: diasRestantes
+            });
+        }
+    });
+
+    const container = document.getElementById('alertasVencimiento');
+    if (!container) return;
+
+    if (proximasVencer.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    let html = `<div class="alert alert-warning visible" style="display: block; margin-bottom: 20px;">
+        <strong>Facturas por vencer en los pr&oacute;ximos 7 d&iacute;as (${proximasVencer.length}):</strong>
+        <ul style="margin: 8px 0 0 20px; list-style: disc;">`;
+    proximasVencer.forEach(f => {
+        html += `<li>${f.numero} - ${f.cliente} - ${f.importe} (${f.dias === 0 ? 'HOY' : f.dias === 1 ? 'manana' : f.dias + ' dias'})</li>`;
+    });
+    html += '</ul></div>';
+    container.innerHTML = html;
+    container.style.display = 'block';
+}
+
+// ========================================
+// AUTO-BACKUP (localStorage snapshot)
+// ========================================
+
+let operationCount = 0;
+
+function autoBackup() {
+    operationCount++;
+    if (operationCount % 10 === 0) { // Each 10 operations
+        const backup = {
+            timestamp: new Date().toISOString(),
+            showrooms: DB.getShowrooms(),
+            clientes: DB.getClientes(),
+            pedidos: DB.getPedidos(),
+            facturas: DB.getFacturas(),
+            cobros: DB.getCobros(),
+            liquidaciones: DB.getLiquidaciones()
+        };
+        try {
+            localStorage.setItem('autoBackup', JSON.stringify(backup));
+        } catch(e) {
+            // localStorage full, silently fail
+        }
+    }
+}
+
+function restaurarAutoBackup() {
+    const backup = localStorage.getItem('autoBackup');
+    if (!backup) {
+        alert('No hay copia de seguridad automatica disponible');
+        return;
+    }
+    const data = JSON.parse(backup);
+    const fecha = new Date(data.timestamp).toLocaleString('es-ES');
+    if (!confirm(`Restaurar desde el auto-backup del ${fecha}?\n\nEsto reemplazara todos los datos actuales.`)) return;
+
+    DB.setShowrooms(data.showrooms || []);
+    DB.setClientes(data.clientes || []);
+    DB.setPedidos(data.pedidos || []);
+    DB.setFacturas(data.facturas || []);
+    DB.setCobros(data.cobros || []);
+    DB.setLiquidaciones(data.liquidaciones || []);
+
+    alert('Datos restaurados correctamente');
+    location.reload();
+}
+
+// Hook into DB setters for auto-backup
+const originalSet = DB.set;
+DB.set = function(key, data) {
+    originalSet(key, data);
+    autoBackup();
+};
+
+// Also auto-backup on page unload
+window.addEventListener('beforeunload', function() {
+    const backup = {
+        timestamp: new Date().toISOString(),
+        showrooms: DB.getShowrooms(),
+        clientes: DB.getClientes(),
+        pedidos: DB.getPedidos(),
+        facturas: DB.getFacturas(),
+        cobros: DB.getCobros(),
+        liquidaciones: DB.getLiquidaciones()
+    };
+    try {
+        localStorage.setItem('autoBackup', JSON.stringify(backup));
+    } catch(e) { /* ignore */ }
+});
 

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Comisiones de Showrooms | Charo Ruiz Ibiza</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -19,6 +20,7 @@
                 <input type="file" id="importBackupInput" accept=".json" style="display:none">
                 <button class="btn btn-secondary" onclick="exportarBackup()" title="Exportar copia de seguridad">&darr; Backup</button>
                 <button class="btn btn-secondary" onclick="document.getElementById('importBackupInput').click()" title="Restaurar desde copia de seguridad">&uarr; Restaurar</button>
+                <button class="btn btn-secondary" onclick="restaurarAutoBackup()" title="Restaurar &uacute;ltima copia autom&aacute;tica">Auto-Backup</button>
             </div>
         </div>
     </header>
@@ -44,7 +46,39 @@
 
         <!-- TAB: DASHBOARD -->
         <div id="tab-dashboard" class="tab-content active">
+            <div id="alertasVencimiento" style="display:none;"></div>
             <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Gráficos del Dashboard -->
+            <div class="charts-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-icon">B</div>
+                            <div class="card-title">Facturaci&oacute;n por Showroom</div>
+                        </div>
+                    </div>
+                    <canvas id="chartFacturacionShowroom" height="260"></canvas>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <div class="card-icon">E</div>
+                            <div class="card-title">Estado de Facturas</div>
+                        </div>
+                    </div>
+                    <canvas id="chartEstadoFacturas" height="260"></canvas>
+                </div>
+            </div>
+            <div class="card" style="margin-bottom: 24px;">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">T</div>
+                        <div class="card-title">Evoluci&oacute;n Mensual de Cobros</div>
+                    </div>
+                </div>
+                <canvas id="chartEvolucionCobros" height="200"></canvas>
+            </div>
 
             <!-- Comisiones Proyectadas -->
             <div class="card" id="comisionesProyectadasCard">
@@ -130,6 +164,7 @@
                     </div>
                     <div class="actions">
                         <button class="btn btn-success" onclick="modalPedido()">+ Nuevo Pedido</button>
+                        <button class="btn btn-secondary" onclick="exportarPedidos()">&darr; Exportar</button>
                         <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
@@ -450,6 +485,10 @@
                     <small id="facImporteHelp" style="color: var(--gray-500); font-size: 13px; display: none; margin-top: 4px;">Introduce el importe en positivo. Se guardar&aacute; como negativo.</small>
                 </div>
             </div>
+            <div class="form-group">
+                <label for="facNotas">Notas / Observaciones</label>
+                <textarea id="facNotas" rows="2" placeholder="Ej: Pago aplazado, pendiente de reclamaci&oacute;n..."></textarea>
+            </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalFactura')">Cancelar</button>
                 <button class="btn btn-primary" onclick="guardarFactura()">Guardar</button>
@@ -513,6 +552,10 @@
             <div class="form-group">
                 <label for="cobImporte">Importe *</label>
                 <input type="number" id="cobImporte" step="0.01" min="0" required>
+            </div>
+            <div class="form-group">
+                <label for="cobNotas">Notas / Observaciones</label>
+                <textarea id="cobNotas" rows="2" placeholder="Ej: Transferencia bancaria, cheque n&ordm;..."></textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalCobro')">Cancelar</button>
@@ -589,7 +632,7 @@
 
     <footer>
         <div class="footer-logo">Charo Ruiz Ibiza</div>
-        <p>Sistema de Comisiones de Showrooms v2.0</p>
+        <p>Sistema de Comisiones de Showrooms v3.0</p>
     </footer>
 
     <script src="app.js"></script>
