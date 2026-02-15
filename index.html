@@ -15,12 +15,20 @@
                 <div class="logo-text"><span class="logo-accent">&#9670;</span> Charo Ruiz Ibiza</div>
                 <div class="header-subtitle">Sistema de Comisiones de Showrooms</div>
             </div>
+            <div class="actions">
+                <input type="file" id="importBackupInput" accept=".json" style="display:none">
+                <button class="btn btn-secondary" onclick="exportarBackup()" title="Exportar copia de seguridad">&darr; Backup</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('importBackupInput').click()" title="Restaurar desde copia de seguridad">&uarr; Restaurar</button>
+            </div>
         </div>
     </header>
 
     <div class="container">
-        <h1>Comisiones</h1>
-        <p class="subtitle">Control de pedidos, facturas y comisiones de showrooms</p>
+        <!-- Barra de búsqueda global -->
+        <div style="margin-bottom: 24px;">
+            <input type="text" id="busquedaGlobal" placeholder="Buscar en todo el sistema (facturas, pedidos, clientes, showrooms)..." style="width: 100%; padding: 12px 16px; font-size: 14px;" oninput="busquedaGlobalHandler()">
+            <div id="resultadosBusqueda" style="display:none;"></div>
+        </div>
 
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="switchTab('dashboard')">Dashboard</button>
@@ -30,12 +38,37 @@
             <button class="nav-tab" onclick="switchTab('facturas')">Facturas</button>
             <button class="nav-tab" onclick="switchTab('cobros')">Cobros</button>
             <button class="nav-tab" onclick="switchTab('informes')">Informes</button>
+            <button class="nav-tab" onclick="switchTab('liquidaciones')">Liquidaciones</button>
             <button class="nav-tab" onclick="switchTab('historico')">Hist&oacute;rico</button>
         </div>
 
         <!-- TAB: DASHBOARD -->
         <div id="tab-dashboard" class="tab-content active">
             <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Comisiones Proyectadas -->
+            <div class="card" id="comisionesProyectadasCard">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">$</div>
+                        <div class="card-title">Comisiones Proyectadas</div>
+                    </div>
+                </div>
+                <div id="comisionesProyectadasContainer"></div>
+            </div>
+
+            <!-- Informe de Antigüedad de Deuda -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">A</div>
+                        <div class="card-title">Antig&uuml;edad de Deuda</div>
+                    </div>
+                </div>
+                <div id="agingReportContainer"></div>
+            </div>
+
+            <!-- Facturas Pendientes de Cobro -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
@@ -56,18 +89,9 @@
                         <div class="card-title">Showrooms</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalShowroom()">
-                            <span>+</span>
-                            <span>Nuevo Showroom</span>
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportarShowrooms()">
-                            <span>&darr;</span>
-                            <span>Exportar</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importShowroomsInput').click()">
-                            <span>&uarr;</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalShowroom()">+ Nuevo Showroom</button>
+                        <button class="btn btn-secondary" onclick="exportarShowrooms()">&darr; Exportar</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importShowroomsInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importShowroomsInput" accept=".xlsx,.csv" style="display:none">
@@ -85,18 +109,9 @@
                         <div class="card-title">Clientes</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalCliente()">
-                            <span>+</span>
-                            <span>Nuevo Cliente</span>
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportarClientes()">
-                            <span>&darr;</span>
-                            <span>Exportar</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importClientesInput').click()">
-                            <span>&uarr;</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalCliente()">+ Nuevo Cliente</button>
+                        <button class="btn btn-secondary" onclick="exportarClientes()">&darr; Exportar</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importClientesInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importClientesInput" accept=".xlsx,.csv" style="display:none">
@@ -114,14 +129,8 @@
                         <div class="card-title">Pedidos</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalPedido()">
-                            <span>+</span>
-                            <span>Nuevo Pedido</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">
-                            <span>&uarr;</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalPedido()">+ Nuevo Pedido</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importPedidosInput" accept=".xlsx,.csv" style="display:none">
@@ -139,14 +148,8 @@
                         <div class="card-title">Facturas</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalFactura()">
-                            <span>+</span>
-                            <span>Nueva Factura</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importFacturasInput').click()">
-                            <span>&uarr;</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalFactura()">+ Nueva Factura</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importFacturasInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importFacturasInput" accept=".xlsx,.csv" style="display:none">
@@ -164,14 +167,8 @@
                         <div class="card-title">Cobros</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalCobro()">
-                            <span>+</span>
-                            <span>Nuevo Cobro</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importCobrosInput').click()">
-                            <span>&uarr;</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalCobro()">+ Nuevo Cobro</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importCobrosInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importCobrosInput" accept=".xlsx,.csv" style="display:none">
@@ -182,14 +179,14 @@
 
         <!-- TAB: INFORMES -->
         <div id="tab-informes" class="tab-content">
+            <!-- Informe de Comisiones -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
                         <div class="card-icon">R</div>
-                        <div class="card-title">Generar Informe de Comisiones</div>
+                        <div class="card-title">Informe de Comisiones</div>
                     </div>
                 </div>
-
                 <div class="form-row">
                     <div class="form-group">
                         <label for="infFechaInicio">Fecha Inicio (fecha cobro)</label>
@@ -200,19 +197,77 @@
                         <input type="date" id="infFechaFin">
                     </div>
                 </div>
-
                 <div class="form-group">
                     <label for="infShowroom">Showroom (Opcional)</label>
                     <select id="infShowroom">
                         <option value="">Todos los showrooms</option>
                     </select>
                 </div>
-
-                <button class="btn btn-primary" onclick="generarInforme()">
-                    <span>Generar Informe Excel</span>
-                </button>
-
+                <button class="btn btn-primary" onclick="generarInforme()">Generar Informe Excel</button>
                 <div id="infPreview" class="table-container" style="display:none; margin-top:24px"></div>
+            </div>
+
+            <!-- Comparativa entre Periodos -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">VS</div>
+                        <div class="card-title">Comparativa entre Periodos</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Periodo 1 - Inicio</label>
+                        <input type="date" id="cmpInicio1">
+                    </div>
+                    <div class="form-group">
+                        <label>Periodo 1 - Fin</label>
+                        <input type="date" id="cmpFin1">
+                    </div>
+                    <div class="form-group">
+                        <label>Periodo 2 - Inicio</label>
+                        <input type="date" id="cmpInicio2">
+                    </div>
+                    <div class="form-group">
+                        <label>Periodo 2 - Fin</label>
+                        <input type="date" id="cmpFin2">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="generarComparativa()">Generar Comparativa</button>
+                <div id="comparativaResultado" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- Extracto por Cliente -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">E</div>
+                        <div class="card-title">Extracto por Cliente</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="extCliente">Cliente</label>
+                    <select id="extCliente">
+                        <option value="">Seleccionar cliente...</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="generarExtractoCliente()">Ver Extracto</button>
+                <div id="extractoResultado" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+
+        <!-- TAB: LIQUIDACIONES -->
+        <div id="tab-liquidaciones" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">L</div>
+                        <div class="card-title">Liquidaciones de Comisiones</div>
+                    </div>
+                    <button class="btn btn-success" onclick="modalLiquidacion()">+ Nueva Liquidaci&oacute;n</button>
+                </div>
+                <div class="alert alert-info" id="liquidacionesAlert"></div>
+                <div class="table-container" id="liquidacionesTable"></div>
             </div>
         </div>
 
@@ -224,18 +279,14 @@
                         <div class="card-icon">H</div>
                         <div class="card-title">Hist&oacute;rico de Informes</div>
                     </div>
-                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar hist&oacute;rico">
-                        &times;
-                    </button>
+                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar hist&oacute;rico">&times;</button>
                 </div>
-
                 <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
                     <input type="text" id="buscarHistorico" placeholder="Buscar en hist&oacute;rico..." style="flex: 1; min-width: 200px;">
                     <select id="filtroShowroomHistorico" style="min-width: 200px;">
                         <option value="">Todos los showrooms</option>
                     </select>
                 </div>
-
                 <div id="historicoInformesContainer"></div>
             </div>
         </div>
@@ -367,17 +418,13 @@
                 <label>Pedido(s) Origen</label>
                 <div id="pedidosCheckboxes" style="margin-bottom: 4px;"></div>
                 <input type="hidden" id="facPedidos">
-                <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
-                    Selecciona un cliente para ver sus pedidos
-                </small>
+                <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">Selecciona un cliente para ver sus pedidos</small>
             </div>
             <div class="form-group" id="facAbonoGroup" style="display:none;">
                 <label>Factura(s) que abona *</label>
                 <div id="facturasAbonablesCheckboxes" style="margin-bottom: 4px;"></div>
                 <input type="hidden" id="facFacturasAbonadas">
-                <small id="facturasAbonablesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
-                    Selecciona un cliente para ver sus facturas
-                </small>
+                <small id="facturasAbonablesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">Selecciona un cliente para ver sus facturas</small>
             </div>
             <div class="form-row">
                 <div class="form-group">
@@ -400,9 +447,7 @@
                 <div class="form-group">
                     <label for="facImporte" id="facImporteLabel">Importe *</label>
                     <input type="number" id="facImporte" step="0.01" min="0" required>
-                    <small id="facImporteHelp" style="color: var(--gray-500); font-size: 13px; display: none; margin-top: 4px;">
-                        Introduce el importe en positivo. Se guardar&aacute; como negativo.
-                    </small>
+                    <small id="facImporteHelp" style="color: var(--gray-500); font-size: 13px; display: none; margin-top: 4px;">Introduce el importe en positivo. Se guardar&aacute; como negativo.</small>
                 </div>
             </div>
             <div class="modal-footer">
@@ -491,9 +536,60 @@
         </div>
     </div>
 
+    <!-- Modal Liquidación -->
+    <div id="modalLiquidacion" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalLiquidacionTitle">Nueva Liquidaci&oacute;n</h3>
+                <button class="modal-close" onclick="cerrarModal('modalLiquidacion')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="liqShowroom">Showroom *</label>
+                <select id="liqShowroom" required>
+                    <option value="">Seleccionar showroom...</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="liqFechaInicio">Periodo Inicio *</label>
+                    <input type="date" id="liqFechaInicio" required>
+                </div>
+                <div class="form-group">
+                    <label for="liqFechaFin">Periodo Fin *</label>
+                    <input type="date" id="liqFechaFin" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="liqMoneda">Moneda *</label>
+                    <select id="liqMoneda" required>
+                        <option value="EUR">EUR (&euro;)</option>
+                        <option value="USD">USD ($)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="liqImporte">Importe Pagado *</label>
+                    <input type="number" id="liqImporte" step="0.01" min="0" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="liqFechaPago">Fecha de Pago *</label>
+                <input type="date" id="liqFechaPago" required>
+            </div>
+            <div class="form-group">
+                <label for="liqNotas">Notas</label>
+                <textarea id="liqNotas" rows="2"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalLiquidacion')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarLiquidacion()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <div class="footer-logo">Charo Ruiz Ibiza</div>
-        <p>Sistema de Comisiones de Showrooms v1.0</p>
+        <p>Sistema de Comisiones de Showrooms v2.0</p>
     </footer>
 
     <script src="app.js"></script>

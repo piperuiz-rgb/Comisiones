@@ -22,6 +22,9 @@ const DB = {
     getCobros: () => DB.getArray('cobros'),
     setCobros: (data) => DB.set('cobros', data),
     
+    getLiquidaciones: () => DB.getArray('liquidaciones'),
+    setLiquidaciones: (data) => DB.set('liquidaciones', data),
+
     getHistoricoInformes: () => DB.getArray('historicoInformes'),
     addHistoricoInforme: (informe) => {
         const historico = DB.getHistoricoInformes();
@@ -209,7 +212,8 @@ function switchTab(tabName) {
     if (tabName === 'pedidos') cargarTablaPedidos();
     if (tabName === 'facturas') cargarTablaFacturas();
     if (tabName === 'cobros') cargarTablaCobros();
-    if (tabName === 'informes') cargarSelectShowrooms();
+    if (tabName === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
+    if (tabName === 'liquidaciones') cargarTablaLiquidaciones();
     if (tabName === 'historico') cargarHistoricoInformes();
 }
 
@@ -358,6 +362,9 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('importCobrosInput').addEventListener('change', (e) => {
         if (e.target.files.length > 0) importarCobros(e.target.files[0]);
     });
+    document.getElementById('importBackupInput').addEventListener('change', (e) => {
+        if (e.target.files.length > 0) importarBackup(e.target.files[0]);
+    });
 
     // Cargar dashboard inicial
     cargarDashboard();
@@ -473,6 +480,10 @@ function cargarDashboard() {
         html += '</tbody></table>';
         document.getElementById('facturasPendientesContainer').innerHTML = html;
     }
+
+    // Cargar secciones adicionales del dashboard
+    cargarComisionesProyectadas();
+    cargarAgingReport();
 }
 
 // ========================================
@@ -514,6 +525,13 @@ function guardarShowroom() {
     }
 
     const showrooms = DB.getShowrooms();
+
+    // Validación de duplicados
+    const duplicado = showrooms.find(s => s.nombre.toLowerCase() === nombre.toLowerCase() && s.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe un showroom con el nombre "${duplicado.nombre}"`);
+        return;
+    }
 
     if (editandoId) {
         const index = showrooms.findIndex(s => s.id === editandoId);
@@ -573,12 +591,38 @@ function cargarTablaShowrooms() {
 }
 
 function eliminarShowroom(id) {
-    if (!confirm('¿Eliminar este showroom?')) return;
-    
-    const showrooms = DB.getShowrooms().filter(s => s.id !== id);
-    DB.setShowrooms(showrooms);
+    const clientes = DB.getClientes().filter(c => c.showroomId === id);
+    const pedidos = DB.getPedidos();
+    const facturas = DB.getFacturas();
+    const cobros = DB.getCobros();
+
+    const clienteIds = new Set(clientes.map(c => c.id));
+    const pedidosVinculados = pedidos.filter(p => clienteIds.has(p.clienteId));
+    const facturasVinculadas = facturas.filter(f => clienteIds.has(f.clienteId));
+    const facturaIds = new Set(facturasVinculadas.map(f => f.id));
+    const cobrosVinculados = cobros.filter(c => facturaIds.has(c.facturaId));
+
+    let msg = '¿Eliminar este showroom?';
+    const items = [];
+    if (clientes.length > 0) items.push(`${clientes.length} cliente(s)`);
+    if (pedidosVinculados.length > 0) items.push(`${pedidosVinculados.length} pedido(s)`);
+    if (facturasVinculadas.length > 0) items.push(`${facturasVinculadas.length} factura(s)`);
+    if (cobrosVinculados.length > 0) items.push(`${cobrosVinculados.length} cobro(s)`);
+    if (items.length > 0) {
+        msg += `\n\nSe eliminarán también: ${items.join(', ')}.\nEsta acción no se puede deshacer.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    // Eliminar en cascada
+    DB.setCobros(cobros.filter(c => !facturaIds.has(c.facturaId)));
+    DB.setFacturas(facturas.filter(f => !clienteIds.has(f.clienteId)));
+    DB.setPedidos(pedidos.filter(p => !clienteIds.has(p.clienteId)));
+    DB.setClientes(DB.getClientes().filter(c => c.showroomId !== id));
+    DB.setShowrooms(DB.getShowrooms().filter(s => s.id !== id));
+
     cargarTablaShowrooms();
-    showAlert('showroomsAlert', 'Showroom eliminado correctamente', 'success');
+    showAlert('showroomsAlert', 'Showroom y datos vinculados eliminados', 'success');
 }
 
 function exportarShowrooms() {
@@ -679,9 +723,16 @@ function guardarCliente() {
         alert('Por favor completa todos los campos');
         return;
     }
-    
+
     const clientes = DB.getClientes();
-    
+
+    // Validación de duplicados (mismo nombre + mismo showroom)
+    const duplicado = clientes.find(c => c.nombre.toLowerCase() === nombre.toLowerCase() && c.showroomId === showroomId && c.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe un cliente "${duplicado.nombre}" en este showroom`);
+        return;
+    }
+
     if (editandoId) {
         const index = clientes.findIndex(c => c.id === editandoId);
         clientes[index] = { ...clientes[index], nombre, showroomId };
@@ -693,7 +744,7 @@ function guardarCliente() {
             createdAt: new Date().toISOString()
         });
     }
-    
+
     DB.setClientes(clientes);
     cerrarModal('modalCliente');
     cargarTablaClientes();
@@ -739,12 +790,29 @@ function cargarTablaClientes() {
 }
 
 function eliminarCliente(id) {
-    if (!confirm('¿Eliminar este cliente?')) return;
-    
-    const clientes = DB.getClientes().filter(c => c.id !== id);
-    DB.setClientes(clientes);
+    const pedidos = DB.getPedidos().filter(p => p.clienteId === id);
+    const facturas = DB.getFacturas().filter(f => f.clienteId === id);
+    const facturaIds = new Set(facturas.map(f => f.id));
+    const cobros = DB.getCobros().filter(c => facturaIds.has(c.facturaId));
+
+    let msg = '¿Eliminar este cliente?';
+    const items = [];
+    if (pedidos.length > 0) items.push(`${pedidos.length} pedido(s)`);
+    if (facturas.length > 0) items.push(`${facturas.length} factura(s)`);
+    if (cobros.length > 0) items.push(`${cobros.length} cobro(s)`);
+    if (items.length > 0) {
+        msg += `\n\nSe eliminarán también: ${items.join(', ')}.\nEsta acción no se puede deshacer.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    DB.setCobros(DB.getCobros().filter(c => !facturaIds.has(c.facturaId)));
+    DB.setFacturas(DB.getFacturas().filter(f => f.clienteId !== id));
+    DB.setPedidos(DB.getPedidos().filter(p => p.clienteId !== id));
+    DB.setClientes(DB.getClientes().filter(c => c.id !== id));
+
     cargarTablaClientes();
-    showAlert('clientesAlert', 'Cliente eliminado correctamente', 'success');
+    showAlert('clientesAlert', 'Cliente y datos vinculados eliminados', 'success');
 }
 
 function exportarClientes() {
@@ -861,9 +929,16 @@ function guardarPedido() {
         alert('Por favor completa todos los campos');
         return;
     }
-    
+
     const pedidos = DB.getPedidos();
-    
+
+    // Validación de duplicados
+    const duplicado = pedidos.find(p => p.numero.toLowerCase() === numero.toLowerCase() && p.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe un pedido con el número "${duplicado.numero}"`);
+        return;
+    }
+
     if (editandoId) {
         const index = pedidos.findIndex(p => p.id === editandoId);
         pedidos[index] = { ...pedidos[index], numero, clienteId, fecha, moneda, importe };
@@ -878,7 +953,7 @@ function guardarPedido() {
             createdAt: new Date().toISOString()
         });
     }
-    
+
     DB.setPedidos(pedidos);
     cerrarModal('modalPedido');
     cargarTablaPedidos();
@@ -926,10 +1001,21 @@ function cargarTablaPedidos() {
 }
 
 function eliminarPedido(id) {
-    if (!confirm('¿Eliminar este pedido?')) return;
-    
-    const pedidos = DB.getPedidos().filter(p => p.id !== id);
-    DB.setPedidos(pedidos);
+    const pedido = DB.getPedidos().find(p => p.id === id);
+    const cobrosAnticipo = DB.getCobros().filter(c => c.pedidoId === id);
+
+    let msg = '¿Eliminar este pedido?';
+    if (cobrosAnticipo.length > 0) {
+        msg += `\n\nTiene ${cobrosAnticipo.length} anticipo(s) asociado(s) que también se eliminarán.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    if (cobrosAnticipo.length > 0) {
+        const cobroIds = new Set(cobrosAnticipo.map(c => c.id));
+        DB.setCobros(DB.getCobros().filter(c => !cobroIds.has(c.id)));
+    }
+    DB.setPedidos(DB.getPedidos().filter(p => p.id !== id));
     cargarTablaPedidos();
     showAlert('pedidosAlert', 'Pedido eliminado correctamente', 'success');
 }
@@ -1099,9 +1185,16 @@ function guardarFactura() {
         alert('Por favor completa todos los campos obligatorios');
         return;
     }
-    
+
     const facturas = DB.getFacturas();
-    
+
+    // Validación de duplicados
+    const duplicado = facturas.find(f => f.numero.toLowerCase() === numero.toLowerCase() && f.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe una factura con el número "${duplicado.numero}"`);
+        return;
+    }
+
     if (editandoId) {
         const index = facturas.findIndex(f => f.id === editandoId);
         facturas[index] = { ...facturas[index], numero, clienteId, pedidosOrigen, fecha, fechaVencimiento, moneda, importe };
@@ -1118,7 +1211,7 @@ function guardarFactura() {
             createdAt: new Date().toISOString()
         });
     }
-    
+
     DB.setFacturas(facturas);
     cerrarModal('modalFactura');
     cargarTablaFacturas();
@@ -1180,10 +1273,20 @@ function cargarTablaFacturas() {
 }
 
 function eliminarFactura(id) {
-    if (!confirm('¿Eliminar esta factura?')) return;
-    
-    const facturas = DB.getFacturas().filter(f => f.id !== id);
-    DB.setFacturas(facturas);
+    const cobrosFactura = DB.getCobros().filter(c => c.facturaId === id);
+
+    let msg = '¿Eliminar esta factura?';
+    if (cobrosFactura.length > 0) {
+        msg += `\n\nTiene ${cobrosFactura.length} cobro(s) asociado(s) que también se eliminarán.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    if (cobrosFactura.length > 0) {
+        const cobroIds = new Set(cobrosFactura.map(c => c.id));
+        DB.setCobros(DB.getCobros().filter(c => !cobroIds.has(c.id)));
+    }
+    DB.setFacturas(DB.getFacturas().filter(f => f.id !== id));
     cargarTablaFacturas();
     showAlert('facturasAlert', 'Factura eliminada correctamente', 'success');
 }
@@ -1276,9 +1379,16 @@ function guardarCliente() {
         alert('Por favor completa todos los campos');
         return;
     }
-    
+
     const clientes = DB.getClientes();
-    
+
+    // Validación de duplicados
+    const duplicado = clientes.find(c => c.nombre.toLowerCase() === nombre.toLowerCase() && c.showroomId === showroomId && c.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe un cliente "${duplicado.nombre}" en este showroom`);
+        return;
+    }
+
     if (editandoId) {
         const index = clientes.findIndex(c => c.id === editandoId);
         clientes[index] = { ...clientes[index], nombre, showroomId };
@@ -1290,7 +1400,7 @@ function guardarCliente() {
             fechaCreacion: new Date().toISOString()
         });
     }
-    
+
     DB.setClientes(clientes);
     cerrarModal('modalCliente');
     cargarTablaClientes();
@@ -1330,12 +1440,29 @@ function cargarTablaClientes() {
 }
 
 function eliminarCliente(id) {
-    if (!confirm('¿Eliminar este cliente?')) return;
-    
-    const clientes = DB.getClientes().filter(c => c.id !== id);
-    DB.setClientes(clientes);
+    const pedidos = DB.getPedidos().filter(p => p.clienteId === id);
+    const facturas = DB.getFacturas().filter(f => f.clienteId === id);
+    const facturaIds = new Set(facturas.map(f => f.id));
+    const cobros = DB.getCobros().filter(c => facturaIds.has(c.facturaId));
+
+    let msg = '¿Eliminar este cliente?';
+    const items = [];
+    if (pedidos.length > 0) items.push(`${pedidos.length} pedido(s)`);
+    if (facturas.length > 0) items.push(`${facturas.length} factura(s)`);
+    if (cobros.length > 0) items.push(`${cobros.length} cobro(s)`);
+    if (items.length > 0) {
+        msg += `\n\nSe eliminarán también: ${items.join(', ')}.\nEsta acción no se puede deshacer.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    DB.setCobros(DB.getCobros().filter(c => !facturaIds.has(c.facturaId)));
+    DB.setFacturas(DB.getFacturas().filter(f => f.clienteId !== id));
+    DB.setPedidos(DB.getPedidos().filter(p => p.clienteId !== id));
+    DB.setClientes(DB.getClientes().filter(c => c.id !== id));
+
     cargarTablaClientes();
-    showAlert('clientesAlert', 'Cliente eliminado', 'success');
+    showAlert('clientesAlert', 'Cliente y datos vinculados eliminados', 'success');
 }
 
 function exportarClientes() {
@@ -1451,9 +1578,16 @@ function guardarPedido() {
         alert('Por favor completa todos los campos');
         return;
     }
-    
+
     const pedidos = DB.getPedidos();
-    
+
+    // Validación de duplicados
+    const duplicado = pedidos.find(p => p.numero.toLowerCase() === numero.toLowerCase() && p.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe un pedido con el número "${duplicado.numero}"`);
+        return;
+    }
+
     if (editandoId) {
         const index = pedidos.findIndex(p => p.id === editandoId);
         pedidos[index] = { ...pedidos[index], numero, clienteId, fecha, moneda, importe };
@@ -1468,7 +1602,7 @@ function guardarPedido() {
             fechaCreacion: new Date().toISOString()
         });
     }
-    
+
     DB.setPedidos(pedidos);
     cerrarModal('modalPedido');
     cargarTablaPedidos();
@@ -1558,12 +1692,22 @@ function filtrarPedidos() {
 }
 
 function eliminarPedido(id) {
-    if (!confirm('¿Eliminar este pedido?')) return;
-    
-    const pedidos = DB.getPedidos().filter(p => p.id !== id);
-    DB.setPedidos(pedidos);
+    const cobrosAnticipo = DB.getCobros().filter(c => c.pedidoId === id);
+
+    let msg = '¿Eliminar este pedido?';
+    if (cobrosAnticipo.length > 0) {
+        msg += `\n\nTiene ${cobrosAnticipo.length} anticipo(s) asociado(s) que también se eliminarán.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    if (cobrosAnticipo.length > 0) {
+        const cobroIds = new Set(cobrosAnticipo.map(c => c.id));
+        DB.setCobros(DB.getCobros().filter(c => !cobroIds.has(c.id)));
+    }
+    DB.setPedidos(DB.getPedidos().filter(p => p.id !== id));
     cargarTablaPedidos();
-    showAlert('pedidosAlert', 'Pedido eliminado', 'success');
+    showAlert('pedidosAlert', 'Pedido eliminado correctamente', 'success');
 }
 
 function importarPedidos(file) {
@@ -1748,12 +1892,19 @@ function guardarFactura() {
         return;
     }
 
+    // Validación de duplicados
+    const facturas = DB.getFacturas();
+    const duplicado = facturas.find(f => f.numero.toLowerCase() === numero.toLowerCase() && f.id !== editandoId);
+    if (duplicado) {
+        alert(`Ya existe una factura con el número "${duplicado.numero}"`);
+        return;
+    }
+
     // Los abonos se guardan con importe negativo
     if (esAbono && importe > 0) {
         importe = -importe;
     }
 
-    const facturas = DB.getFacturas();
     let facturaId;
 
     if (editandoId) {
@@ -1965,12 +2116,22 @@ function filtrarFacturas() {
 }
 
 function eliminarFactura(id) {
-    if (!confirm('¿Eliminar esta factura?')) return;
-    
-    const facturas = DB.getFacturas().filter(f => f.id !== id);
-    DB.setFacturas(facturas);
+    const cobrosFactura = DB.getCobros().filter(c => c.facturaId === id);
+
+    let msg = '¿Eliminar esta factura?';
+    if (cobrosFactura.length > 0) {
+        msg += `\n\nTiene ${cobrosFactura.length} cobro(s) asociado(s) que también se eliminarán.`;
+    }
+
+    if (!confirm(msg)) return;
+
+    if (cobrosFactura.length > 0) {
+        const cobroIds = new Set(cobrosFactura.map(c => c.id));
+        DB.setCobros(DB.getCobros().filter(c => !cobroIds.has(c.id)));
+    }
+    DB.setFacturas(DB.getFacturas().filter(f => f.id !== id));
     cargarTablaFacturas();
-    showAlert('facturasAlert', 'Factura eliminada', 'success');
+    showAlert('facturasAlert', 'Factura eliminada correctamente', 'success');
 }
 
 function importarFacturas(file) {
@@ -3428,5 +3589,523 @@ function limpiarHistoricoInformes() {
     if (!confirm('¿Eliminar todo el histórico de informes?')) return;
     DB.clearHistoricoInformes();
     cargarHistoricoInformes();
+}
+
+// ========================================
+// BACKUP / RESTAURACIÓN
+// ========================================
+
+function exportarBackup() {
+    const backup = {
+        version: '2.0',
+        fecha: new Date().toISOString(),
+        datos: {
+            showrooms: DB.getShowrooms(),
+            clientes: DB.getClientes(),
+            pedidos: DB.getPedidos(),
+            facturas: DB.getFacturas(),
+            cobros: DB.getCobros(),
+            liquidaciones: DB.getLiquidaciones(),
+            historicoInformes: DB.getHistoricoInformes()
+        }
+    };
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Backup_Comisiones_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function importarBackup(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const backup = JSON.parse(e.target.result);
+            if (!backup.datos) {
+                alert('Archivo de backup no válido');
+                return;
+            }
+
+            if (!confirm(`Restaurar backup del ${new Date(backup.fecha).toLocaleString('es-ES')}?\n\nEsto REEMPLAZARÁ todos los datos actuales.\nSe recomienda hacer un backup antes de continuar.`)) return;
+
+            if (backup.datos.showrooms) DB.setShowrooms(backup.datos.showrooms);
+            if (backup.datos.clientes) DB.setClientes(backup.datos.clientes);
+            if (backup.datos.pedidos) DB.setPedidos(backup.datos.pedidos);
+            if (backup.datos.facturas) DB.setFacturas(backup.datos.facturas);
+            if (backup.datos.cobros) DB.setCobros(backup.datos.cobros);
+            if (backup.datos.liquidaciones) DB.setLiquidaciones(backup.datos.liquidaciones);
+            if (backup.datos.historicoInformes) DB.set('historicoInformes', backup.datos.historicoInformes);
+
+            alert('Backup restaurado correctamente. La página se recargará.');
+            location.reload();
+        } catch (error) {
+            alert('Error al leer el archivo de backup: ' + error.message);
+        }
+    };
+    reader.readAsText(file);
+    document.getElementById('importBackupInput').value = '';
+}
+
+// ========================================
+// BÚSQUEDA GLOBAL
+// ========================================
+
+function busquedaGlobalHandler() {
+    const query = document.getElementById('busquedaGlobal').value.trim().toLowerCase();
+    const container = document.getElementById('resultadosBusqueda');
+
+    if (query.length < 2) {
+        container.style.display = 'none';
+        return;
+    }
+
+    const showrooms = DB.getShowrooms();
+    const clientes = DB.getClientes();
+    const pedidos = DB.getPedidos();
+    const facturas = DB.getFacturas();
+
+    const resultados = [];
+
+    showrooms.filter(s => s.nombre.toLowerCase().includes(query)).forEach(s => {
+        resultados.push({ tipo: 'Showroom', nombre: s.nombre, detalle: `${s.comision}%`, tab: 'showrooms' });
+    });
+
+    clientes.filter(c => c.nombre.toLowerCase().includes(query)).forEach(c => {
+        const show = showrooms.find(s => s.id === c.showroomId);
+        resultados.push({ tipo: 'Cliente', nombre: c.nombre, detalle: show ? show.nombre : '', tab: 'clientes' });
+    });
+
+    pedidos.filter(p => p.numero.toLowerCase().includes(query)).forEach(p => {
+        const cli = clientes.find(c => c.id === p.clienteId);
+        resultados.push({ tipo: 'Pedido', nombre: p.numero, detalle: `${cli ? cli.nombre : ''} - ${formatCurrency(p.importe, p.moneda)}`, tab: 'pedidos' });
+    });
+
+    facturas.filter(f => f.numero.toLowerCase().includes(query)).forEach(f => {
+        const cli = clientes.find(c => c.id === f.clienteId);
+        resultados.push({ tipo: 'Factura', nombre: f.numero, detalle: `${cli ? cli.nombre : ''} - ${formatCurrency(f.importe, f.moneda)}`, tab: 'facturas' });
+    });
+
+    if (resultados.length === 0) {
+        container.innerHTML = '<div class="card" style="margin-top: 8px; padding: 16px; color: var(--gray-500);">Sin resultados</div>';
+    } else {
+        let html = '<div class="card" style="margin-top: 8px; padding: 0;">';
+        html += '<table><thead><tr><th>Tipo</th><th>Nombre / Número</th><th>Detalle</th><th></th></tr></thead><tbody>';
+        resultados.slice(0, 20).forEach(r => {
+            html += `<tr>
+                <td><span class="badge badge-info">${r.tipo}</span></td>
+                <td><strong>${r.nombre}</strong></td>
+                <td>${r.detalle}</td>
+                <td><button class="btn btn-secondary btn-icon" onclick="switchTab('${r.tab}'); document.getElementById('busquedaGlobal').value=''; document.getElementById('resultadosBusqueda').style.display='none';">Ir</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    }
+
+    container.style.display = 'block';
+}
+
+// ========================================
+// COMISIONES PROYECTADAS (DASHBOARD)
+// ========================================
+
+function cargarComisionesProyectadas() {
+    const facturas = DB.getFacturas().filter(f => !f.esAbono);
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+    const cobros = DB.getCobros();
+
+    const proyeccion = {};
+
+    facturas.forEach(factura => {
+        const estado = calcularEstadoFactura(factura.id);
+        if (estado.porcentaje >= 100) return; // Ya cobrada
+
+        const cliente = clientes.find(c => c.id === factura.clienteId);
+        if (!cliente) return;
+        const showroom = showrooms.find(s => s.id === cliente.showroomId);
+        if (!showroom) return;
+
+        const moneda = factura.moneda || 'EUR';
+        const key = `${showroom.id}_${moneda}`;
+
+        if (!proyeccion[key]) {
+            proyeccion[key] = { showroom: showroom.nombre, moneda, pendiente: 0, comisionEstimada: 0 };
+        }
+
+        const pendiente = factura.importe - estado.cobrado;
+        proyeccion[key].pendiente += pendiente;
+        proyeccion[key].comisionEstimada += redondear2(factura.importe * showroom.comision / 100);
+    });
+
+    const container = document.getElementById('comisionesProyectadasContainer');
+    const items = Object.values(proyeccion);
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color: var(--gray-500); padding: 12px;">No hay facturas pendientes de cobro.</p>';
+        return;
+    }
+
+    let html = '<table><thead><tr><th>Showroom</th><th>Moneda</th><th>Facturado Pendiente</th><th>Comisión Estimada</th></tr></thead><tbody>';
+    items.forEach(item => {
+        html += `<tr>
+            <td><strong>${item.showroom}</strong></td>
+            <td>${item.moneda}</td>
+            <td>${formatCurrency(item.pendiente, item.moneda)}</td>
+            <td>${formatCurrency(item.comisionEstimada, item.moneda)}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// ========================================
+// INFORME DE ANTIGÜEDAD DE DEUDA
+// ========================================
+
+function cargarAgingReport() {
+    const facturas = DB.getFacturas().filter(f => !f.esAbono);
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+    const hoy = new Date();
+
+    const tramos = { '0-30': [], '31-60': [], '61-90': [], '90+': [] };
+    const totales = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };
+
+    facturas.forEach(factura => {
+        const estado = calcularEstadoFactura(factura.id);
+        if (estado.porcentaje >= 100) return;
+
+        const vencimiento = new Date(factura.vencimiento || factura.fechaVencimiento);
+        const diasVencida = Math.floor((hoy - vencimiento) / (1000 * 60 * 60 * 24));
+
+        if (diasVencida < 0) return; // No vencida aún
+
+        const pendiente = factura.importe - estado.cobrado;
+        const cliente = clientes.find(c => c.id === factura.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+
+        const item = {
+            factura: factura.numero,
+            cliente: cliente ? cliente.nombre : '-',
+            showroom: showroom ? showroom.nombre : '-',
+            pendiente,
+            moneda: factura.moneda || 'EUR',
+            diasVencida
+        };
+
+        if (diasVencida <= 30) { tramos['0-30'].push(item); totales['0-30'] += pendiente; }
+        else if (diasVencida <= 60) { tramos['31-60'].push(item); totales['31-60'] += pendiente; }
+        else if (diasVencida <= 90) { tramos['61-90'].push(item); totales['61-90'] += pendiente; }
+        else { tramos['90+'].push(item); totales['90+'] += pendiente; }
+    });
+
+    const container = document.getElementById('agingReportContainer');
+    const totalFacturas = Object.values(tramos).reduce((sum, arr) => sum + arr.length, 0);
+
+    if (totalFacturas === 0) {
+        container.innerHTML = '<p style="color: var(--gray-500); padding: 12px;">No hay facturas vencidas pendientes.</p>';
+        return;
+    }
+
+    let html = '<div class="stats-grid" style="margin-bottom: 16px;">';
+    const colores = { '0-30': 'var(--warning)', '31-60': '#ea580c', '61-90': '#dc2626', '90+': '#991b1b' };
+    Object.entries(tramos).forEach(([tramo, items]) => {
+        html += `<div class="stat-card" style="border-left-color: ${colores[tramo]};">
+            <div class="stat-label">${tramo} días</div>
+            <div class="stat-value">${formatCurrency(totales[tramo], 'EUR')}</div>
+            <div style="font-size: 12px; color: var(--gray-500); margin-top: 4px;">${items.length} factura(s)</div>
+        </div>`;
+    });
+    html += '</div>';
+
+    html += '<table><thead><tr><th>Tramo</th><th>Factura</th><th>Cliente</th><th>Showroom</th><th>Pendiente</th><th>Días Vencida</th></tr></thead><tbody>';
+    Object.entries(tramos).forEach(([tramo, items]) => {
+        items.sort((a, b) => b.diasVencida - a.diasVencida).forEach(item => {
+            const badgeClass = tramo === '90+' ? 'danger' : tramo === '61-90' ? 'danger' : tramo === '31-60' ? 'warning' : 'info';
+            html += `<tr>
+                <td><span class="badge badge-${badgeClass}">${tramo}d</span></td>
+                <td><strong>${item.factura}</strong></td>
+                <td>${item.cliente}</td>
+                <td>${item.showroom}</td>
+                <td>${formatCurrency(item.pendiente, item.moneda)}</td>
+                <td>${item.diasVencida} días</td>
+            </tr>`;
+        });
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+// ========================================
+// LIQUIDACIONES (PAGO DE COMISIONES)
+// ========================================
+
+function modalLiquidacion(id = null) {
+    const modal = document.getElementById('modalLiquidacion');
+    const title = document.getElementById('modalLiquidacionTitle');
+
+    const showrooms = DB.getShowrooms();
+    const select = document.getElementById('liqShowroom');
+    select.innerHTML = '<option value="">Seleccionar showroom...</option>';
+    showrooms.forEach(s => { select.innerHTML += `<option value="${s.id}">${s.nombre}</option>`; });
+
+    if (id) {
+        const liq = DB.getLiquidaciones().find(l => l.id === id);
+        title.textContent = 'Editar Liquidación';
+        document.getElementById('liqShowroom').value = liq.showroomId;
+        document.getElementById('liqFechaInicio').value = liq.fechaInicio;
+        document.getElementById('liqFechaFin').value = liq.fechaFin;
+        document.getElementById('liqMoneda').value = liq.moneda;
+        document.getElementById('liqImporte').value = liq.importe;
+        document.getElementById('liqFechaPago').value = liq.fechaPago;
+        document.getElementById('liqNotas').value = liq.notas || '';
+        editandoId = id;
+    } else {
+        title.textContent = 'Nueva Liquidación';
+        document.getElementById('liqShowroom').value = '';
+        document.getElementById('liqFechaInicio').value = '';
+        document.getElementById('liqFechaFin').value = '';
+        document.getElementById('liqMoneda').value = 'EUR';
+        document.getElementById('liqImporte').value = '';
+        document.getElementById('liqFechaPago').valueAsDate = new Date();
+        document.getElementById('liqNotas').value = '';
+        editandoId = null;
+    }
+
+    modal.classList.add('visible');
+}
+
+function guardarLiquidacion() {
+    const showroomId = document.getElementById('liqShowroom').value;
+    const fechaInicio = document.getElementById('liqFechaInicio').value;
+    const fechaFin = document.getElementById('liqFechaFin').value;
+    const moneda = document.getElementById('liqMoneda').value;
+    const importe = parseFloat(document.getElementById('liqImporte').value);
+    const fechaPago = document.getElementById('liqFechaPago').value;
+    const notas = document.getElementById('liqNotas').value.trim();
+
+    if (!showroomId || !fechaInicio || !fechaFin || !fechaPago || isNaN(importe)) {
+        alert('Por favor completa todos los campos obligatorios');
+        return;
+    }
+
+    const liquidaciones = DB.getLiquidaciones();
+
+    if (editandoId) {
+        const index = liquidaciones.findIndex(l => l.id === editandoId);
+        liquidaciones[index] = { ...liquidaciones[index], showroomId, fechaInicio, fechaFin, moneda, importe, fechaPago, notas };
+    } else {
+        liquidaciones.push({
+            id: generarId(),
+            showroomId, fechaInicio, fechaFin, moneda, importe, fechaPago, notas,
+            createdAt: new Date().toISOString()
+        });
+    }
+
+    DB.setLiquidaciones(liquidaciones);
+    cerrarModal('modalLiquidacion');
+    cargarTablaLiquidaciones();
+    showAlert('liquidacionesAlert', `Liquidación ${editandoId ? 'actualizada' : 'registrada'} correctamente`, 'success');
+}
+
+function cargarTablaLiquidaciones() {
+    const liquidaciones = DB.getLiquidaciones();
+    const showrooms = DB.getShowrooms();
+    const container = document.getElementById('liquidacionesTable');
+
+    if (liquidaciones.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">L</div><p>No hay liquidaciones registradas</p><p style="font-size: 14px; margin-top: 8px;">Registra el pago de comisiones a showrooms</p></div>';
+        return;
+    }
+
+    let html = '<table><thead><tr><th>Showroom</th><th>Periodo</th><th>Importe Pagado</th><th>Fecha Pago</th><th>Notas</th><th>Acciones</th></tr></thead><tbody>';
+
+    liquidaciones.sort((a, b) => new Date(b.fechaPago) - new Date(a.fechaPago)).forEach(liq => {
+        const showroom = showrooms.find(s => s.id === liq.showroomId);
+        html += `<tr>
+            <td><strong>${showroom ? showroom.nombre : '-'}</strong></td>
+            <td>${formatDate(liq.fechaInicio)} - ${formatDate(liq.fechaFin)}</td>
+            <td>${formatCurrency(liq.importe, liq.moneda)}</td>
+            <td>${formatDate(liq.fechaPago)}</td>
+            <td>${liq.notas || '-'}</td>
+            <td><div class="actions">
+                <button class="btn btn-secondary btn-icon" onclick="modalLiquidacion('${liq.id}')">Edit</button>
+                <button class="btn btn-danger btn-icon" onclick="eliminarLiquidacion('${liq.id}')">Del</button>
+            </div></td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function eliminarLiquidacion(id) {
+    if (!confirm('¿Eliminar esta liquidación?')) return;
+    DB.setLiquidaciones(DB.getLiquidaciones().filter(l => l.id !== id));
+    cargarTablaLiquidaciones();
+    showAlert('liquidacionesAlert', 'Liquidación eliminada', 'success');
+}
+
+// ========================================
+// COMPARATIVA ENTRE PERIODOS
+// ========================================
+
+function calcularFacturacionPeriodo(fechaInicio, fechaFin) {
+    const facturas = DB.getFacturas().filter(f => !f.esAbono && f.fecha >= fechaInicio && f.fecha <= fechaFin);
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+
+    const porShowroom = {};
+    let totalEUR = 0;
+
+    facturas.forEach(f => {
+        const cliente = clientes.find(c => c.id === f.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+        const nombre = showroom ? showroom.nombre : 'Sin showroom';
+
+        if (!porShowroom[nombre]) porShowroom[nombre] = { facturado: 0, numFacturas: 0 };
+        porShowroom[nombre].facturado += f.importe;
+        porShowroom[nombre].numFacturas++;
+        totalEUR += f.importe;
+    });
+
+    return { porShowroom, total: totalEUR, numFacturas: facturas.length };
+}
+
+function generarComparativa() {
+    const inicio1 = document.getElementById('cmpInicio1').value;
+    const fin1 = document.getElementById('cmpFin1').value;
+    const inicio2 = document.getElementById('cmpInicio2').value;
+    const fin2 = document.getElementById('cmpFin2').value;
+
+    if (!inicio1 || !fin1 || !inicio2 || !fin2) {
+        alert('Por favor selecciona ambos periodos completos');
+        return;
+    }
+
+    const p1 = calcularFacturacionPeriodo(inicio1, fin1);
+    const p2 = calcularFacturacionPeriodo(inicio2, fin2);
+
+    const allShowrooms = new Set([...Object.keys(p1.porShowroom), ...Object.keys(p2.porShowroom)]);
+
+    let html = '<table><thead><tr><th>Showroom</th><th>Periodo 1</th><th>Periodo 2</th><th>Diferencia</th><th>Variación</th></tr></thead><tbody>';
+
+    allShowrooms.forEach(nombre => {
+        const v1 = (p1.porShowroom[nombre] || { facturado: 0 }).facturado;
+        const v2 = (p2.porShowroom[nombre] || { facturado: 0 }).facturado;
+        const diff = v2 - v1;
+        const pct = v1 > 0 ? ((diff / v1) * 100).toFixed(1) : (v2 > 0 ? '+100' : '0');
+        const badge = diff > 0 ? 'success' : diff < 0 ? 'danger' : 'info';
+
+        html += `<tr>
+            <td><strong>${nombre}</strong></td>
+            <td>${formatCurrency(v1, 'EUR')}</td>
+            <td>${formatCurrency(v2, 'EUR')}</td>
+            <td>${formatCurrency(diff, 'EUR')}</td>
+            <td><span class="badge badge-${badge}">${diff >= 0 ? '+' : ''}${pct}%</span></td>
+        </tr>`;
+    });
+
+    const totalDiff = p2.total - p1.total;
+    const totalPct = p1.total > 0 ? ((totalDiff / p1.total) * 100).toFixed(1) : '0';
+    html += `<tr style="font-weight: bold; border-top: 2px solid var(--gray-300);">
+        <td>TOTAL</td>
+        <td>${formatCurrency(p1.total, 'EUR')} (${p1.numFacturas} fact.)</td>
+        <td>${formatCurrency(p2.total, 'EUR')} (${p2.numFacturas} fact.)</td>
+        <td>${formatCurrency(totalDiff, 'EUR')}</td>
+        <td><span class="badge badge-${totalDiff >= 0 ? 'success' : 'danger'}">${totalDiff >= 0 ? '+' : ''}${totalPct}%</span></td>
+    </tr>`;
+
+    html += '</tbody></table>';
+    document.getElementById('comparativaResultado').innerHTML = html;
+}
+
+// ========================================
+// EXTRACTO POR CLIENTE
+// ========================================
+
+function cargarSelectExtractoClientes() {
+    const clientes = DB.getClientes();
+    const select = document.getElementById('extCliente');
+    select.innerHTML = '<option value="">Seleccionar cliente...</option>';
+    clientes.forEach(c => { select.innerHTML += `<option value="${c.id}">${c.nombre}</option>`; });
+}
+
+function generarExtractoCliente() {
+    const clienteId = document.getElementById('extCliente').value;
+    if (!clienteId) { alert('Selecciona un cliente'); return; }
+
+    const cliente = DB.getClientes().find(c => c.id === clienteId);
+    const showroom = DB.getShowrooms().find(s => s.id === cliente.showroomId);
+    const pedidos = DB.getPedidos().filter(p => p.clienteId === clienteId).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    const facturas = DB.getFacturas().filter(f => f.clienteId === clienteId).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+    const cobros = DB.getCobros();
+
+    let html = `<div class="card" style="margin-bottom: 0;">
+        <h4 style="color: var(--primary); margin-bottom: 16px;">Extracto: ${cliente.nombre}</h4>
+        <div style="margin-bottom: 16px;">
+            <strong>Showroom:</strong> ${showroom ? showroom.nombre : '-'} |
+            <strong>Pedidos:</strong> ${pedidos.length} |
+            <strong>Facturas:</strong> ${facturas.length}
+        </div>`;
+
+    if (pedidos.length > 0) {
+        html += '<h4 style="margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-500);">Pedidos</h4>';
+        html += '<table><thead><tr><th>Número</th><th>Fecha</th><th>Importe</th></tr></thead><tbody>';
+        pedidos.forEach(p => {
+            html += `<tr><td><strong>${p.numero}</strong></td><td>${formatDate(p.fecha)}</td><td>${formatCurrency(p.importe, p.moneda)}</td></tr>`;
+        });
+        html += '</tbody></table>';
+    }
+
+    if (facturas.length > 0) {
+        html += '<h4 style="margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--gray-500);">Facturas y Cobros</h4>';
+        html += '<table><thead><tr><th>Factura</th><th>Tipo</th><th>Fecha</th><th>Importe</th><th>Cobrado</th><th>Estado</th></tr></thead><tbody>';
+        facturas.forEach(f => {
+            const estado = calcularEstadoFactura(f.id);
+            const badge = estado.porcentaje >= 100 ? 'success' : estado.porcentaje > 0 ? 'warning' : 'danger';
+            const tipoLabel = f.esAbono ? 'Abono' : 'Factura';
+            html += `<tr>
+                <td><strong>${f.numero}</strong></td>
+                <td>${tipoLabel}</td>
+                <td>${formatDate(f.fecha)}</td>
+                <td>${formatCurrency(f.importe, f.moneda)}</td>
+                <td>${f.esAbono ? '-' : formatCurrency(estado.cobrado, f.moneda)}</td>
+                <td><span class="badge badge-${badge}">${estado.porcentaje >= 100 ? 'Cobrada' : estado.porcentaje > 0 ? estado.porcentaje.toFixed(0) + '%' : 'Pendiente'}</span></td>
+            </tr>`;
+
+            if (!f.esAbono) {
+                const cobrosF = cobros.filter(c => c.facturaId === f.id).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+                cobrosF.forEach(c => {
+                    html += `<tr style="background: var(--gray-50); font-size: 12px;">
+                        <td colspan="2" style="padding-left: 30px;">${c.pedidoId ? 'Anticipo' : 'Cobro'}</td>
+                        <td>${formatDate(c.fecha)}</td>
+                        <td>${formatCurrency(c.importe, c.moneda)}</td>
+                        <td colspan="2"></td>
+                    </tr>`;
+                });
+            }
+        });
+
+        // Totales
+        const totalFacturado = facturas.filter(f => !f.esAbono).reduce((sum, f) => sum + f.importe, 0);
+        const totalAbonos = facturas.filter(f => f.esAbono).reduce((sum, f) => sum + f.importe, 0);
+        const totalCobrado = facturas.filter(f => !f.esAbono).reduce((sum, f) => sum + calcularEstadoFactura(f.id).cobrado, 0);
+
+        html += `<tr style="font-weight: bold; border-top: 2px solid var(--gray-300);">
+            <td colspan="3">TOTAL</td>
+            <td>${formatCurrency(totalFacturado + totalAbonos, 'EUR')}</td>
+            <td>${formatCurrency(totalCobrado, 'EUR')}</td>
+            <td>${formatCurrency(totalFacturado + totalAbonos - totalCobrado, 'EUR')} pend.</td>
+        </tr>`;
+        html += '</tbody></table>';
+    }
+
+    html += '</div>';
+    document.getElementById('extractoResultado').innerHTML = html;
 }
 
