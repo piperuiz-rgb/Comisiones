@@ -66,7 +66,7 @@ function showAlert(containerId, message, type = 'info') {
     const alert = document.getElementById(containerId);
     if (!alert) return;
     alert.className = `alert alert-${type} visible`;
-    alert.innerHTML = `<strong>${type === 'error' ? '⚠' : 'ℹ'}</strong><span>${message}</span>`;
+    alert.innerHTML = `<strong>${type === 'error' ? '!' : 'i'}</strong><span>${message}</span>`;
     setTimeout(() => alert.classList.remove('visible'), 5000);
 }
 
@@ -97,6 +97,99 @@ function aplicarFormatoNumerosExcel(ws) {
 
 function redondear2(valor) {
     return Math.round(valor * 100) / 100;
+}
+
+// ========================================
+// TRADUCCIONES PARA INFORMES (i18n)
+// ========================================
+
+const i18n = {
+    es: {
+        // Hoja resumen
+        reportTitle: 'INFORME DE COMISIONES DE SHOWROOMS',
+        companyName: 'Charo Ruiz Ibiza',
+        period: 'Periodo',
+        generated: 'Generado',
+        summarySheet: 'Resumen',
+        showroom: 'Showroom',
+        currency: 'Moneda',
+        totalBilled: 'Total Facturado',
+        commissionPct: '% Comisión',
+        totalCommission: 'Comisión Total',
+        total: 'TOTAL',
+        // Hoja detalle
+        commissionsFor: 'COMISIONES',
+        type: 'Tipo',
+        invoiceNoDate: 'Nº Factura / Fecha Cobro',
+        client: 'Cliente',
+        ordersOrCredited: 'Pedido(s) / Fact. abonadas',
+        issueDate: 'Fecha Emisión',
+        paymentDate: 'Fecha Cobro / Emisión',
+        amount: 'Importe',
+        totalCollected: 'Total Cobrado',
+        commission: 'Comisión',
+        invoice: 'FACTURA',
+        creditNote: 'ABONO',
+        advance: '  → Anticipo',
+        payment: '  → Cobro',
+        orderRef: 'Pedido',
+        accumulated: 'Acumulado',
+        adjustment: 'Ajuste',
+        // Detalle modal
+        detailTitle: 'Detalle del Informe',
+        downloadExcel: 'Descargar Excel',
+        close: 'Cerrar',
+        totalLabel: 'Total',
+        commissionLabel: 'Comisión',
+    },
+    en: {
+        // Summary sheet
+        reportTitle: 'SHOWROOM COMMISSION REPORT',
+        companyName: 'Charo Ruiz Ibiza',
+        period: 'Period',
+        generated: 'Generated',
+        summarySheet: 'Summary',
+        showroom: 'Showroom',
+        currency: 'Currency',
+        totalBilled: 'Total Billed',
+        commissionPct: '% Commission',
+        totalCommission: 'Total Commission',
+        total: 'TOTAL',
+        // Detail sheet
+        commissionsFor: 'COMMISSIONS',
+        type: 'Type',
+        invoiceNoDate: 'Invoice No. / Payment Date',
+        client: 'Client',
+        ordersOrCredited: 'Order(s) / Credited Invoices',
+        issueDate: 'Issue Date',
+        paymentDate: 'Payment / Issue Date',
+        amount: 'Amount',
+        totalCollected: 'Total Collected',
+        commission: 'Commission',
+        invoice: 'INVOICE',
+        creditNote: 'CREDIT NOTE',
+        advance: '  → Advance',
+        payment: '  → Payment',
+        orderRef: 'Order',
+        accumulated: 'Accumulated',
+        adjustment: 'Adjustment',
+        // Detail modal
+        detailTitle: 'Report Detail',
+        downloadExcel: 'Download Excel',
+        close: 'Close',
+        totalLabel: 'Total',
+        commissionLabel: 'Commission',
+    }
+};
+
+function t(key, lang) {
+    return (i18n[lang] && i18n[lang][key]) || i18n.es[key] || key;
+}
+
+function formatDateLang(dateStr, lang) {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr + 'T00:00:00');
+    return date.toLocaleDateString(lang === 'en' ? 'en-GB' : 'es-ES');
 }
 
 // ========================================
@@ -230,152 +323,6 @@ function calcularEstadoPedido(pedidoId) {
 }
 
 // ========================================
-// SHOWROOMS - CRUD
-// ========================================
-
-function modalShowroom(id = null) {
-    const modal = document.getElementById('modalShowroom');
-    const title = document.getElementById('modalShowroomTitle');
-    
-    if (id) {
-        const showrooms = DB.getShowrooms();
-        const showroom = showrooms.find(s => s.id === id);
-        title.textContent = 'Editar Showroom';
-        document.getElementById('showNombre').value = showroom.nombre;
-        document.getElementById('showComision').value = showroom.comision;
-        editandoId = id;
-    } else {
-        title.textContent = 'Nuevo Showroom';
-        document.getElementById('showNombre').value = '';
-        document.getElementById('showComision').value = '';
-        editandoId = null;
-    }
-    
-    modal.classList.add('visible');
-}
-
-function guardarShowroom() {
-    const nombre = document.getElementById('showNombre').value.trim();
-    const comision = parseFloat(document.getElementById('showComision').value);
-    
-    if (!nombre || isNaN(comision) || comision < 0 || comision > 100) {
-        alert('Por favor completa todos los campos correctamente');
-        return;
-    }
-    
-    const showrooms = DB.getShowrooms();
-    
-    if (editandoId) {
-        const index = showrooms.findIndex(s => s.id === editandoId);
-        showrooms[index] = { ...showrooms[index], nombre, comision };
-    } else {
-        showrooms.push({
-            id: generarId(),
-            nombre,
-            comision,
-            fechaCreacion: new Date().toISOString()
-        });
-    }
-    
-    DB.setShowrooms(showrooms);
-    cerrarModal('modalShowroom');
-    cargarTablaShowrooms();
-    showAlert('showroomsAlert', `Showroom ${editandoId ? 'actualizado' : 'creado'} correctamente`, 'success');
-}
-
-function cargarTablaShowrooms() {
-    const showrooms = DB.getShowrooms();
-    const container = document.getElementById('showroomsTable');
-    
-    if (showrooms.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">🏢</div><p>No hay showrooms registrados</p></div>';
-        return;
-    }
-    
-    let html = '<table><thead><tr><th>Nombre</th><th>% Comisión</th><th>Acciones</th></tr></thead><tbody>';
-    
-    showrooms.forEach(showroom => {
-        html += `
-            <tr>
-                <td><strong>${showroom.nombre}</strong></td>
-                <td>${showroom.comision}%</td>
-                <td>
-                    <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalShowroom('${showroom.id}')" title="Editar">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarShowroom('${showroom.id}')" title="Eliminar">🗑️</button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    container.innerHTML = html;
-}
-
-function eliminarShowroom(id) {
-    if (!confirm('¿Eliminar este showroom?')) return;
-    
-    const showrooms = DB.getShowrooms().filter(s => s.id !== id);
-    DB.setShowrooms(showrooms);
-    cargarTablaShowrooms();
-    showAlert('showroomsAlert', 'Showroom eliminado', 'success');
-}
-
-function exportarShowrooms() {
-    const showrooms = DB.getShowrooms();
-    if (showrooms.length === 0) {
-        alert('No hay showrooms para exportar');
-        return;
-    }
-    
-    const data = [['Nombre', '% Comisión']];
-    showrooms.forEach(s => data.push([s.nombre, s.comision]));
-    
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Showrooms');
-    XLSX.writeFile(wb, 'Showrooms_Charo_Ruiz.xlsx');
-}
-
-function importarShowrooms(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            
-            const showrooms = DB.getShowrooms();
-            let importados = 0;
-            
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row[0]) continue;
-                
-                showrooms.push({
-                    id: generarId(),
-                    nombre: String(row[0]),
-                    comision: parseFloat(row[1]) || 0,
-                    fechaCreacion: new Date().toISOString()
-                });
-                importados++;
-            }
-            
-            DB.setShowrooms(showrooms);
-            cargarTablaShowrooms();
-            showAlert('showroomsAlert', `${importados} showrooms importados correctamente`, 'success');
-        } catch (error) {
-            showAlert('showroomsAlert', 'Error al importar: ' + error.message, 'error');
-        }
-    };
-    reader.readAsArrayBuffer(file);
-    document.getElementById('importShowroomsInput').value = '';
-}
-
-
-// ========================================
 // INICIALIZACIÓN
 // ========================================
 
@@ -385,7 +332,7 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('cobFecha').valueAsDate = hoy;
     document.getElementById('pedFecha').valueAsDate = hoy;
     document.getElementById('facFecha').valueAsDate = hoy;
-    
+
     const treintaDias = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000);
     document.getElementById('facVencimiento').valueAsDate = treintaDias;
 
@@ -487,7 +434,7 @@ function cargarDashboard() {
     if (facturasPend.length === 0) {
         document.getElementById('facturasPendientesContainer').innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">✓</div>
+                <div class="empty-icon">OK</div>
                 <p>¡Todas las facturas están cobradas!</p>
             </div>
         `;
@@ -535,48 +482,52 @@ function cargarDashboard() {
 function modalShowroom(id = null) {
     const modal = document.getElementById('modalShowroom');
     const title = document.getElementById('modalShowroomTitle');
-    
+
     if (id) {
         const showrooms = DB.getShowrooms();
         const showroom = showrooms.find(s => s.id === id);
-        
+
         title.textContent = 'Editar Showroom';
         document.getElementById('showNombre').value = showroom.nombre;
         document.getElementById('showComision').value = showroom.comision;
+        document.getElementById('showIdioma').value = showroom.idioma || 'es';
         editandoId = id;
     } else {
         title.textContent = 'Nuevo Showroom';
         document.getElementById('showNombre').value = '';
         document.getElementById('showComision').value = '';
+        document.getElementById('showIdioma').value = 'es';
         editandoId = null;
     }
-    
+
     modal.classList.add('visible');
 }
 
 function guardarShowroom() {
     const nombre = document.getElementById('showNombre').value.trim();
     const comision = parseFloat(document.getElementById('showComision').value);
-    
+    const idioma = document.getElementById('showIdioma').value;
+
     if (!nombre || isNaN(comision)) {
         alert('Por favor completa todos los campos');
         return;
     }
-    
+
     const showrooms = DB.getShowrooms();
-    
+
     if (editandoId) {
         const index = showrooms.findIndex(s => s.id === editandoId);
-        showrooms[index] = { ...showrooms[index], nombre, comision };
+        showrooms[index] = { ...showrooms[index], nombre, comision, idioma };
     } else {
         showrooms.push({
             id: generarId(),
             nombre,
             comision,
+            idioma,
             createdAt: new Date().toISOString()
         });
     }
-    
+
     DB.setShowrooms(showrooms);
     cerrarModal('modalShowroom');
     cargarTablaShowrooms();
@@ -586,35 +537,37 @@ function guardarShowroom() {
 function cargarTablaShowrooms() {
     const showrooms = DB.getShowrooms();
     const container = document.getElementById('showroomsTable');
-    
+
     if (showrooms.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">🏢</div>
+                <div class="empty-icon">S</div>
                 <p>No hay showrooms registrados</p>
                 <p style="font-size: 14px; margin-top: 8px;">Crea uno nuevo o importa desde Excel</p>
             </div>
         `;
         return;
     }
-    
-    let html = '<table><thead><tr><th>Nombre</th><th>% Comisión</th><th>Acciones</th></tr></thead><tbody>';
-    
+
+    let html = '<table><thead><tr><th>Nombre</th><th>% Comisión</th><th>Idioma Informe</th><th>Acciones</th></tr></thead><tbody>';
+
     showrooms.forEach(show => {
+        const idiomaLabel = (show.idioma || 'es') === 'en' ? 'EN' : 'ES';
         html += `
             <tr>
                 <td><strong>${show.nombre}</strong></td>
                 <td>${show.comision}%</td>
+                <td><span class="badge badge-info">${idiomaLabel}</span></td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalShowroom('${show.id}')" title="Editar">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarShowroom('${show.id}')" title="Eliminar">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalShowroom('${show.id}')" title="Editar">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarShowroom('${show.id}')" title="Eliminar">Del</button>
                     </div>
                 </td>
             </tr>
         `;
     });
-    
+
     html += '</tbody></table>';
     container.innerHTML = html;
 }
@@ -634,10 +587,10 @@ function exportarShowrooms() {
         alert('No hay showrooms para exportar');
         return;
     }
-    
-    const data = [['Nombre', '% Comisión']];
-    showrooms.forEach(s => data.push([s.nombre, s.comision]));
-    
+
+    const data = [['Nombre', '% Comisión', 'Idioma']];
+    showrooms.forEach(s => data.push([s.nombre, s.comision, s.idioma || 'es']));
+
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Showrooms');
@@ -652,23 +605,27 @@ function importarShowrooms(file) {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            
+
             const showrooms = DB.getShowrooms();
             let importados = 0;
-            
+
             for (let i = 1; i < rows.length; i++) {
                 const row = rows[i];
                 if (!row[0]) continue;
-                
+
+                const idiomaRaw = (String(row[2] || 'es')).toLowerCase().trim();
+                const idioma = (idiomaRaw === 'en' || idiomaRaw === 'english') ? 'en' : 'es';
+
                 showrooms.push({
                     id: generarId(),
                     nombre: row[0],
                     comision: parseFloat(row[1]) || 0,
+                    idioma,
                     createdAt: new Date().toISOString()
                 });
                 importados++;
             }
-            
+
             DB.setShowrooms(showrooms);
             cargarTablaShowrooms();
             showAlert('showroomsAlert', `${importados} showrooms importados correctamente`, 'success');
@@ -751,7 +708,7 @@ function cargarTablaClientes() {
     if (clientes.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">👥</div>
+                <div class="empty-icon">C</div>
                 <p>No hay clientes registrados</p>
                 <p style="font-size: 14px; margin-top: 8px;">Crea uno nuevo o importa desde Excel</p>
             </div>
@@ -769,8 +726,8 @@ function cargarTablaClientes() {
                 <td>${showroom ? showroom.nombre : '-'}</td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalCliente('${cli.id}')" title="Editar">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarCliente('${cli.id}')" title="Eliminar">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalCliente('${cli.id}')" title="Editar">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarCliente('${cli.id}')" title="Eliminar">Del</button>
                     </div>
                 </td>
             </tr>
@@ -936,7 +893,7 @@ function cargarTablaPedidos() {
     if (pedidos.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">📦</div>
+                <div class="empty-icon">P</div>
                 <p>No hay pedidos registrados</p>
                 <p style="font-size: 14px; margin-top: 8px;">Crea uno nuevo o importa desde Excel</p>
             </div>
@@ -956,8 +913,8 @@ function cargarTablaPedidos() {
                 <td>${formatCurrency(ped.importe, ped.moneda)}</td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalPedido('${ped.id}')" title="Editar">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarPedido('${ped.id}')" title="Eliminar">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalPedido('${ped.id}')" title="Editar">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarPedido('${ped.id}')" title="Eliminar">Del</button>
                     </div>
                 </td>
             </tr>
@@ -1176,7 +1133,7 @@ function cargarTablaFacturas() {
     if (facturas.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <div class="empty-icon">📄</div>
+                <div class="empty-icon">F</div>
                 <p>No hay facturas registradas</p>
                 <p style="font-size: 14px; margin-top: 8px;">Crea una nueva o importa desde Excel</p>
             </div>
@@ -1210,8 +1167,8 @@ function cargarTablaFacturas() {
                 <td><span class="badge badge-${badge}">${textoEstado}</span></td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalFactura('${fac.id}')" title="Editar">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarFactura('${fac.id}')" title="Eliminar">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalFactura('${fac.id}')" title="Editar">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarFactura('${fac.id}')" title="Eliminar">Del</button>
                     </div>
                 </td>
             </tr>
@@ -1346,7 +1303,7 @@ function cargarTablaClientes() {
     const container = document.getElementById('clientesTable');
     
     if (clientes.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>No hay clientes registrados</p></div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">C</div><p>No hay clientes registrados</p></div>';
         return;
     }
     
@@ -1360,8 +1317,8 @@ function cargarTablaClientes() {
                 <td>${showroom ? showroom.nombre : '-'}</td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalCliente('${cliente.id}')">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarCliente('${cliente.id}')">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalCliente('${cliente.id}')">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarCliente('${cliente.id}')">Del</button>
                     </div>
                 </td>
             </tr>
@@ -1525,14 +1482,14 @@ function cargarTablaPedidos() {
     const container = document.getElementById('pedidosTable');
     
     if (pedidos.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><p>No hay pedidos registrados</p></div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">P</div><p>No hay pedidos registrados</p></div>';
         return;
     }
     
     // Controles de filtro
     let html = `
         <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-            <input type="text" id="buscarPedido" placeholder="🔍 Buscar pedido..." style="flex: 1; min-width: 200px;">
+            <input type="text" id="buscarPedido" placeholder="Buscar pedido..." style="flex: 1; min-width: 200px;">
             <select id="filtroClientePedido" style="min-width: 200px;">
                 <option value="">Todos los clientes</option>
                 ${clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
@@ -1559,8 +1516,8 @@ function cargarTablaPedidos() {
                 <td>${formatCurrency(pedido.importe, pedido.moneda)}</td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalPedido('${pedido.id}')">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarPedido('${pedido.id}')">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalPedido('${pedido.id}')">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarPedido('${pedido.id}')">Del</button>
                     </div>
                 </td>
             </tr>
@@ -1860,14 +1817,14 @@ function cargarTablaFacturas() {
     const container = document.getElementById('facturasTable');
     
     if (facturas.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📄</div><p>No hay facturas registradas</p></div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">F</div><p>No hay facturas registradas</p></div>';
         return;
     }
     
     // Añadir controles de filtro y búsqueda
     let html = `
         <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-            <input type="text" id="buscarFactura" placeholder="🔍 Buscar factura..." style="flex: 1; min-width: 200px;">
+            <input type="text" id="buscarFactura" placeholder="Buscar factura..." style="flex: 1; min-width: 200px;">
             <select id="filtroClienteFactura" style="min-width: 200px;">
                 <option value="">Todos los clientes</option>
                 ${clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('')}
@@ -1878,9 +1835,9 @@ function cargarTablaFacturas() {
             </select>
             <select id="filtroEstadoFactura" style="min-width: 150px;">
                 <option value="">Todos los estados</option>
-                <option value="pendiente">🔴 Pendiente</option>
-                <option value="parcial">🟡 Parcial</option>
-                <option value="cobrada">🟢 Cobrada</option>
+                <option value="pendiente">Pendiente</option>
+                <option value="parcial">Parcial</option>
+                <option value="cobrada">Cobrada</option>
             </select>
         </div>
     `;
@@ -1895,14 +1852,14 @@ function cargarTablaFacturas() {
         
         const estadoTexto = estado.cobrado >= factura.importe ? 'cobrada' : estado.cobrado > 0 ? 'parcial' : 'pendiente';
         const badgeClass = estadoTexto === 'cobrada' ? 'success' : estadoTexto === 'parcial' ? 'warning' : 'danger';
-        const badgeText = estadoTexto === 'cobrada' ? '🟢 Cobrada' : estadoTexto === 'parcial' ? '🟡 Parcial' : '🔴 Pendiente';
+        const badgeText = estadoTexto === 'cobrada' ? 'Cobrada' : estadoTexto === 'parcial' ? 'Parcial' : 'Pendiente';
         
         html += `
             <tr data-cliente="${factura.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-estado="${estadoTexto}" data-numero="${factura.numero.toLowerCase()}">
                 <td>
                     <strong>${factura.numero}</strong>
                     ${factura.esAbono ? ' <span class="badge badge-danger" style="font-size: 10px;">ABONO</span>' : ''}
-                    ${cobrosFactura.length > 0 ? `<button class="btn btn-secondary btn-icon" onclick="toggleDetalleCobros('${factura.id}')" style="margin-left: 8px;">👁️</button>` : ''}
+                    ${cobrosFactura.length > 0 ? `<button class="btn btn-secondary btn-icon" onclick="toggleDetalleCobros('${factura.id}')" style="margin-left: 8px;">Ver</button>` : ''}
                 </td>
                 <td>${cliente ? cliente.nombre : '-'}</td>
                 <td>${showroom ? showroom.nombre : '-'}</td>
@@ -1914,8 +1871,8 @@ function cargarTablaFacturas() {
                 <td><span class="badge badge-${badgeClass}">${badgeText}</span></td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalFactura('${factura.id}')">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarFactura('${factura.id}')">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalFactura('${factura.id}')">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarFactura('${factura.id}')">Del</button>
                     </div>
                 </td>
             </tr>
@@ -2511,7 +2468,7 @@ function cargarTablaCobros() {
     const container = document.getElementById('cobrosTable');
 
     if (cobros.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">💰</div><p>No hay cobros registrados</p></div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">$</div><p>No hay cobros registrados</p></div>';
         return;
     }
 
@@ -2551,8 +2508,8 @@ function cargarTablaCobros() {
                 <td>${tipoBadge}</td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalCobro('${cobro.id}')">✏️</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarCobro('${cobro.id}')">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="modalCobro('${cobro.id}')">Edit</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarCobro('${cobro.id}')">Del</button>
                     </div>
                 </td>
             </tr>
@@ -2975,7 +2932,7 @@ function generarInforme() {
 function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
     const wb = XLSX.utils.book_new();
 
-    // Hoja resumen
+    // Hoja resumen (siempre en español para la vista general)
     const resumenData = [
         ['INFORME DE COMISIONES DE SHOWROOMS'],
         ['Charo Ruiz Ibiza'],
@@ -3006,7 +2963,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
     Object.entries(totalesGenerales).forEach(([moneda, totales]) => {
         resumenData.push(['TOTAL', moneda, totales.facturado, '', totales.comision]);
     });
-    
+
     const wsResumen = XLSX.utils.aoa_to_sheet(resumenData);
     wsResumen['!cols'] = [
         { wch: 30 },
@@ -3021,18 +2978,21 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
 
     const cobros = DB.getCobros();
 
-    // Hoja por cada showroom CON DETALLE DE COBROS
+    // Hoja por cada showroom CON DETALLE DE COBROS (en el idioma del showroom)
     Object.values(porShowroom).forEach(data => {
+        const lang = data.showroom.idioma || 'es';
+        const fd = (d) => formatDateLang(d, lang);
+
         const sheetData = [
-            [`COMISIONES - ${data.showroom.nombre}`],
-            [`Periodo: ${formatDate(fechaInicio)} - ${formatDate(fechaFin)}`],
-            [`% Comisión: ${data.showroom.comision}%`],
+            [`${t('commissionsFor', lang)} - ${data.showroom.nombre}`],
+            [`${t('period', lang)}: ${fd(fechaInicio)} - ${fd(fechaFin)}`],
+            [`${t('commissionPct', lang)}: ${data.showroom.comision}%`],
             [''],
         ];
 
         data.facturas.sort((a, b) => new Date(a.fechaCobro100) - new Date(b.fechaCobro100)).forEach(item => {
             const moneda = item.factura.moneda || 'EUR';
-            const tipoLabel = item.factura.esAbono ? 'ABONO' : 'FACTURA';
+            const tipoLabel = item.factura.esAbono ? t('creditNote', lang) : t('invoice', lang);
             const refCol = item.factura.esAbono
                 ? (item.factura.facturasAbonadas || '')
                 : (item.pedidosRef || item.factura.pedidos || '');
@@ -3041,8 +3001,8 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                 item.factura.numero,
                 item.cliente.nombre,
                 refCol,
-                formatDate(item.factura.fecha),
-                formatDate(item.fechaCobro100),
+                fd(item.factura.fecha),
+                fd(item.fechaCobro100),
                 moneda,
                 item.factura.importe,
                 item.factura.esAbono ? '' : item.totalCobrado,
@@ -3060,16 +3020,16 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                     const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
                     acumulado += cobro.importe;
                     sheetData.push([
-                        cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
-                        formatDate(cobro.fecha),
-                        pedidoRef ? `(Pedido: ${pedidoRef})` : '',
+                        cobro.pedidoId ? t('advance', lang) : t('payment', lang),
+                        fd(cobro.fecha),
+                        pedidoRef ? `(${t('orderRef', lang)}: ${pedidoRef})` : '',
                         '',
                         '',
                         '',
                         '',
                         cobro.importe,
                         acumulado,
-                        cobro.esAjuste ? 'Ajuste' : ''
+                        cobro.esAjuste ? t('adjustment', lang) : ''
                     ]);
                 });
             }
@@ -3078,21 +3038,21 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
         });
 
         // Encabezados
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha Cobro', 'Cliente', 'Pedido(s) / Fact. abonadas', 'Fecha Emisión', 'Fecha Cobro / Emisión', 'Moneda', 'Importe', 'Total Cobrado', 'Comisión']);
+        sheetData.splice(4, 0, [t('type', lang), t('invoiceNoDate', lang), t('client', lang), t('ordersOrCredited', lang), t('issueDate', lang), t('paymentDate', lang), t('currency', lang), t('amount', lang), t('totalCollected', lang), t('commission', lang)]);
         sheetData.splice(5, 0, ['']);
 
         // Totales por moneda
         sheetData.push(['']);
         Object.entries(data.totalesPorMoneda).forEach(([moneda, totales]) => {
-            sheetData.push(['', '', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
+            sheetData.push(['', '', '', '', '', t('total', lang), moneda, totales.facturado, '', totales.comision]);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
-            { wch: 12 },  // Tipo
-            { wch: 18 },  // Nº Factura / Fecha
+            { wch: 14 },  // Tipo
+            { wch: 22 },  // Nº Factura / Fecha
             { wch: 30 },  // Cliente
-            { wch: 20 },  // Pedido(s)
+            { wch: 22 },  // Pedido(s)
             { wch: 15 },  // Fecha Emisión
             { wch: 18 },  // Fecha Cobro 100%
             { wch: 8 },   // Moneda
@@ -3104,7 +3064,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
 
         XLSX.utils.book_append_sheet(wb, ws, data.showroom.nombre.substring(0, 30));
     });
-    
+
     // Descargar
     const filename = `Comisiones_${fechaInicio}_${fechaFin}.xlsx`;
     XLSX.writeFile(wb, filename);
@@ -3132,27 +3092,6 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
 }
 
 // ========================================
-// INICIALIZACIÓN
-// ========================================
-
-document.addEventListener('DOMContentLoaded', function() {
-    // Cargar dashboard inicial
-    cargarDashboard();
-    
-    // Configurar fechas por defecto en informe
-    const hoy = new Date();
-    const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
-    
-    document.getElementById('infFechaInicio').valueAsDate = primerDia;
-    document.getElementById('infFechaFin').valueAsDate = ultimoDia;
-    
-    // Configurar fecha actual en cobros
-    document.getElementById('cobFecha').valueAsDate = new Date();
-});
-
-
-// ========================================
 // HISTÓRICO DE INFORMES
 // ========================================
 
@@ -3169,7 +3108,7 @@ function cargarHistoricoInformes() {
     });
     
     if (historico.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📜</div><p>No hay informes generados</p></div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">H</div><p>No hay informes generados</p></div>';
         return;
     }
     
@@ -3196,9 +3135,9 @@ function cargarHistoricoInformes() {
                 <td>${numFacturas}</td>
                 <td>
                     <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="verDetalleInforme('${informe.id}')" title="Ver detalle">👁️</button>
-                        <button class="btn btn-primary btn-icon" onclick="redescargarInforme('${informe.id}')" title="Descargar Excel">📥</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarInforme('${informe.id}')" title="Eliminar">🗑️</button>
+                        <button class="btn btn-secondary btn-icon" onclick="verDetalleInforme('${informe.id}')" title="Ver detalle">Ver</button>
+                        <button class="btn btn-primary btn-icon" onclick="redescargarInforme('${informe.id}')" title="Descargar Excel">XLS</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarInforme('${informe.id}')" title="Eliminar">Del</button>
                     </div>
                 </td>
             </tr>
@@ -3237,52 +3176,54 @@ function filtrarHistorico() {
 function verDetalleInforme(informeId) {
     const informe = DB.getHistoricoInformes().find(i => i.id === informeId);
     if (!informe) return;
-    
+
     const cobros = DB.getCobros();
-    
+
     // Crear modal con el detalle
     let html = `
         <div class="modal visible" id="modalDetalleInforme">
             <div class="modal-content" style="max-width: 90%; max-height: 90vh; overflow-y: auto;">
                 <div class="modal-header">
-                    <h3 class="modal-title">📊 Detalle del Informe</h3>
-                    <button class="modal-close" onclick="document.getElementById('modalDetalleInforme').remove()">×</button>
+                    <h3 class="modal-title">Detalle del Informe</h3>
+                    <button class="modal-close" onclick="document.getElementById('modalDetalleInforme').remove()">&times;</button>
                 </div>
-                
+
                 <div style="margin-bottom: 24px;">
                     <strong>Periodo:</strong> ${formatDate(informe.fechaInicio)} - ${formatDate(informe.fechaFin)}<br>
                     <strong>Generado:</strong> ${new Date(informe.fechaGeneracion).toLocaleString('es-ES')}<br>
                     ${(() => {
                         const totGen = informe.totalesGenerales || { EUR: { facturado: informe.totalGeneral || 0, comision: informe.totalComisionGeneral || 0 } };
-                        return Object.entries(totGen).map(([m, t]) =>
-                            `<strong>Total Facturado (${m}):</strong> ${formatCurrency(t.facturado, m)} | <strong>Comisión:</strong> ${formatCurrency(t.comision, m)}`
+                        return Object.entries(totGen).map(([m, tt]) =>
+                            `<strong>Total Facturado (${m}):</strong> ${formatCurrency(tt.facturado, m)} | <strong>Comisión:</strong> ${formatCurrency(tt.comision, m)}`
                         ).join('<br>');
                     })()}
                 </div>
     `;
-    
+
     Object.values(informe.detalleCompleto).forEach(showroomData => {
+        const lang = showroomData.showroom.idioma || 'es';
+        const fd = (d) => formatDateLang(d, lang);
         html += `
             <div class="card" style="margin-bottom: 24px;">
                 <h4 style="margin-bottom: 16px; color: var(--primary);">${showroomData.showroom.nombre} - ${showroomData.showroom.comision}%</h4>
                 <div style="margin-bottom: 16px;">
                     ${(() => {
                         const tpm = showroomData.totalesPorMoneda || { EUR: { facturado: showroomData.totalFacturado || 0, comision: showroomData.totalComision || 0 } };
-                        return Object.entries(tpm).map(([m, t]) =>
-                            `<strong>Total (${m}):</strong> ${formatCurrency(t.facturado, m)} | <strong>Comisión:</strong> ${formatCurrency(t.comision, m)}`
+                        return Object.entries(tpm).map(([m, tt]) =>
+                            `<strong>${t('totalLabel', lang)} (${m}):</strong> ${formatCurrency(tt.facturado, m)} | <strong>${t('commissionLabel', lang)}:</strong> ${formatCurrency(tt.comision, m)}`
                         ).join(' &nbsp;|&nbsp; ');
                     })()}
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>Factura</th>
-                            <th>Cliente</th>
-                            <th>Pedido(s) / Fact. abonadas</th>
-                            <th>Fecha Emisión</th>
-                            <th>Fecha Cobro / Emisión</th>
-                            <th>Importe</th>
-                            <th>Comisión</th>
+                            <th>${t('invoice', lang)}</th>
+                            <th>${t('client', lang)}</th>
+                            <th>${t('ordersOrCredited', lang)}</th>
+                            <th>${t('issueDate', lang)}</th>
+                            <th>${t('paymentDate', lang)}</th>
+                            <th>${t('amount', lang)}</th>
+                            <th>${t('commission', lang)}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -3294,13 +3235,14 @@ function verDetalleInforme(informeId) {
                 ? (item.factura.facturasAbonadas || '-')
                 : (item.pedidosRef || item.factura.pedidos || '-');
             const rowStyle = esAbono ? ' style="background: #fef2f2;"' : '';
+            const badgeLabel = esAbono ? t('creditNote', lang) : '';
             html += `
                 <tr${rowStyle}>
-                    <td><strong>${item.factura.numero}</strong>${esAbono ? ' <span class="badge badge-danger" style="font-size: 10px;">ABONO</span>' : ''}</td>
+                    <td><strong>${item.factura.numero}</strong>${esAbono ? ` <span class="badge badge-danger" style="font-size: 10px;">${badgeLabel}</span>` : ''}</td>
                     <td>${item.cliente.nombre}</td>
                     <td>${refCol}</td>
-                    <td>${formatDate(item.factura.fecha)}</td>
-                    <td>${formatDate(item.fechaCobro100)}</td>
+                    <td>${fd(item.factura.fecha)}</td>
+                    <td>${fd(item.fechaCobro100)}</td>
                     <td>${formatCurrency(item.factura.importe, item.factura.moneda)}</td>
                     <td>${formatCurrency(item.comision, item.factura.moneda)}</td>
                 </tr>
@@ -3317,34 +3259,34 @@ function verDetalleInforme(informeId) {
                     const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
                     html += `
                         <tr style="background: var(--gray-50); font-size: 13px;">
-                            <td colspan="2" style="padding-left: 40px;">→ ${cobro.pedidoId ? 'Anticipo' : 'Cobro'}: ${formatDate(cobro.fecha)}</td>
-                            <td>${pedidoRef ? 'Ped: ' + pedidoRef : ''}</td>
-                            <td>Acumulado:</td>
+                            <td colspan="2" style="padding-left: 40px;">${cobro.pedidoId ? t('advance', lang).trim() : t('payment', lang).trim()}: ${fd(cobro.fecha)}</td>
+                            <td>${pedidoRef ? t('orderRef', lang) + ': ' + pedidoRef : ''}</td>
+                            <td>${t('accumulated', lang)}:</td>
                             <td></td>
                             <td>${formatCurrency(cobro.importe, cobro.moneda)}</td>
-                            <td>${formatCurrency(acum, item.factura.moneda)}${cobro.esAjuste ? ' <span class="badge badge-info">Ajuste</span>' : ''}</td>
+                            <td>${formatCurrency(acum, item.factura.moneda)}${cobro.esAjuste ? ` <span class="badge badge-info">${t('adjustment', lang)}</span>` : ''}</td>
                         </tr>
                     `;
                 });
             }
         });
-        
+
         html += `
                     </tbody>
                 </table>
             </div>
         `;
     });
-    
+
     html += `
                 <div class="modal-footer">
-                    <button class="btn btn-primary" onclick="redescargarInforme('${informe.id}')">📥 Descargar Excel</button>
-                    <button class="btn btn-secondary" onclick="document.getElementById('modalDetalleInforme').remove()">Cerrar</button>
+                    <button class="btn btn-primary" onclick="redescargarInforme('${informe.id}')">${t('downloadExcel', 'es')}</button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('modalDetalleInforme').remove()">${t('close', 'es')}</button>
                 </div>
             </div>
         </div>
     `;
-    
+
     document.body.insertAdjacentHTML('beforeend', html);
 }
 
@@ -3396,21 +3338,23 @@ function crearInformeExcelDesdeHistorico(informe) {
     aplicarFormatoNumerosExcel(wsResumen);
     XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
 
-    // Hojas por showroom con detalle
+    // Hojas por showroom con detalle (en el idioma del showroom)
     const cobros = DB.getCobros();
 
     Object.values(informe.detalleCompleto).forEach(data => {
+        const lang = data.showroom.idioma || 'es';
+        const fd = (d) => formatDateLang(d, lang);
         const tpm = data.totalesPorMoneda || { EUR: { facturado: data.totalFacturado || 0, comision: data.totalComision || 0 } };
         const sheetData = [
-            [`COMISIONES - ${data.showroom.nombre}`],
-            [`Periodo: ${formatDate(informe.fechaInicio)} - ${formatDate(informe.fechaFin)}`],
-            [`% Comisión: ${data.showroom.comision}%`],
+            [`${t('commissionsFor', lang)} - ${data.showroom.nombre}`],
+            [`${t('period', lang)}: ${fd(informe.fechaInicio)} - ${fd(informe.fechaFin)}`],
+            [`${t('commissionPct', lang)}: ${data.showroom.comision}%`],
             [''],
         ];
 
         data.facturas.forEach(item => {
             const moneda = item.factura.moneda || 'EUR';
-            const tipoLabel = item.factura.esAbono ? 'ABONO' : 'FACTURA';
+            const tipoLabel = item.factura.esAbono ? t('creditNote', lang) : t('invoice', lang);
             const refCol = item.factura.esAbono
                 ? (item.factura.facturasAbonadas || '')
                 : (item.pedidosRef || item.factura.pedidos || '');
@@ -3419,8 +3363,8 @@ function crearInformeExcelDesdeHistorico(informe) {
                 item.factura.numero,
                 item.cliente.nombre,
                 refCol,
-                formatDate(item.factura.fecha),
-                formatDate(item.fechaCobro100),
+                fd(item.factura.fecha),
+                fd(item.fechaCobro100),
                 moneda,
                 item.factura.importe,
                 item.factura.esAbono ? '' : item.totalCobrado,
@@ -3437,13 +3381,13 @@ function crearInformeExcelDesdeHistorico(informe) {
                     const pedidoRef = cobro.pedidoId ? (pedidosDB.find(p => p.id === cobro.pedidoId) || {}).numero || '' : '';
                     acumulado += cobro.importe;
                     sheetData.push([
-                        cobro.pedidoId ? '  → Anticipo' : '  → Cobro',
-                        formatDate(cobro.fecha),
-                        pedidoRef ? `(Pedido: ${pedidoRef})` : '',
+                        cobro.pedidoId ? t('advance', lang) : t('payment', lang),
+                        fd(cobro.fecha),
+                        pedidoRef ? `(${t('orderRef', lang)}: ${pedidoRef})` : '',
                         '', '', '', '',
                         cobro.importe,
                         acumulado,
-                        cobro.esAjuste ? 'Ajuste' : ''
+                        cobro.esAjuste ? t('adjustment', lang) : ''
                     ]);
                 });
             }
@@ -3451,17 +3395,17 @@ function crearInformeExcelDesdeHistorico(informe) {
             sheetData.push(['']);
         });
 
-        sheetData.splice(4, 0, ['Tipo', 'Nº Factura / Fecha', 'Cliente', 'Pedido(s) / Fact. abonadas', 'Fecha Emisión', 'Fecha Cobro / Emisión', 'Moneda', 'Importe', 'Total Cobrado', 'Comisión']);
+        sheetData.splice(4, 0, [t('type', lang), t('invoiceNoDate', lang), t('client', lang), t('ordersOrCredited', lang), t('issueDate', lang), t('paymentDate', lang), t('currency', lang), t('amount', lang), t('totalCollected', lang), t('commission', lang)]);
         sheetData.splice(5, 0, ['']);
 
         sheetData.push(['']);
         Object.entries(tpm).forEach(([moneda, totales]) => {
-            sheetData.push(['', '', '', '', '', 'TOTAL', moneda, totales.facturado, '', totales.comision]);
+            sheetData.push(['', '', '', '', '', t('total', lang), moneda, totales.facturado, '', totales.comision]);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
-            { wch: 12 }, { wch: 18 }, { wch: 30 }, { wch: 20 }, { wch: 15 },
+            { wch: 14 }, { wch: 22 }, { wch: 30 }, { wch: 22 }, { wch: 15 },
             { wch: 18 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
         ];
         aplicarFormatoNumerosExcel(ws);

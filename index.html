@@ -12,25 +12,25 @@
     <header>
         <div class="header-content">
             <div>
-                <div class="logo-text"><span class="logo-accent">◆</span> Charo Ruiz Ibiza</div>
+                <div class="logo-text"><span class="logo-accent">&#9670;</span> Charo Ruiz Ibiza</div>
                 <div class="header-subtitle">Sistema de Comisiones de Showrooms</div>
             </div>
         </div>
     </header>
 
     <div class="container">
-        <h1>Gestión de Comisiones</h1>
-        <p class="subtitle">Control completo de pedidos, facturas y comisiones de showrooms</p>
+        <h1>Comisiones</h1>
+        <p class="subtitle">Control de pedidos, facturas y comisiones de showrooms</p>
 
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
-            <button class="nav-tab" onclick="switchTab('showrooms')">🏢 Showrooms</button>
-            <button class="nav-tab" onclick="switchTab('clientes')">👥 Clientes</button>
-            <button class="nav-tab" onclick="switchTab('pedidos')">📦 Pedidos</button>
-            <button class="nav-tab" onclick="switchTab('facturas')">📄 Facturas</button>
-            <button class="nav-tab" onclick="switchTab('cobros')">💰 Cobros</button>
-            <button class="nav-tab" onclick="switchTab('informes')">📈 Informes</button>
-            <button class="nav-tab" onclick="switchTab('historico')">📜 Histórico Informes</button>
+            <button class="nav-tab active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="nav-tab" onclick="switchTab('showrooms')">Showrooms</button>
+            <button class="nav-tab" onclick="switchTab('clientes')">Clientes</button>
+            <button class="nav-tab" onclick="switchTab('pedidos')">Pedidos</button>
+            <button class="nav-tab" onclick="switchTab('facturas')">Facturas</button>
+            <button class="nav-tab" onclick="switchTab('cobros')">Cobros</button>
+            <button class="nav-tab" onclick="switchTab('informes')">Informes</button>
+            <button class="nav-tab" onclick="switchTab('historico')">Hist&oacute;rico</button>
         </div>
 
         <!-- TAB: DASHBOARD -->
@@ -39,7 +39,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">⚠️</div>
+                        <div class="card-icon">!</div>
                         <div class="card-title">Facturas Pendientes de Cobro</div>
                     </div>
                 </div>
@@ -52,7 +52,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">🏢</div>
+                        <div class="card-icon">S</div>
                         <div class="card-title">Showrooms</div>
                     </div>
                     <div class="actions">
@@ -61,11 +61,11 @@
                             <span>Nuevo Showroom</span>
                         </button>
                         <button class="btn btn-secondary" onclick="exportarShowrooms()">
-                            <span>↓</span>
+                            <span>&darr;</span>
                             <span>Exportar</span>
                         </button>
                         <button class="btn btn-primary" onclick="document.getElementById('importShowroomsInput').click()">
-                            <span>↑</span>
+                            <span>&uarr;</span>
                             <span>Importar</span>
                         </button>
                     </div>
@@ -81,7 +81,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">👥</div>
+                        <div class="card-icon">C</div>
                         <div class="card-title">Clientes</div>
                     </div>
                     <div class="actions">
@@ -90,11 +90,11 @@
                             <span>Nuevo Cliente</span>
                         </button>
                         <button class="btn btn-secondary" onclick="exportarClientes()">
-                            <span>↓</span>
+                            <span>&darr;</span>
                             <span>Exportar</span>
                         </button>
                         <button class="btn btn-primary" onclick="document.getElementById('importClientesInput').click()">
-                            <span>↑</span>
+                            <span>&uarr;</span>
                             <span>Importar</span>
                         </button>
                     </div>
@@ -110,7 +110,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📦</div>
+                        <div class="card-icon">P</div>
                         <div class="card-title">Pedidos</div>
                     </div>
                     <div class="actions">
@@ -119,7 +119,7 @@
                             <span>Nuevo Pedido</span>
                         </button>
                         <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">
-                            <span>↑</span>
+                            <span>&uarr;</span>
                             <span>Importar</span>
                         </button>
                     </div>
@@ -135,7 +135,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📄</div>
+                        <div class="card-icon">F</div>
                         <div class="card-title">Facturas</div>
                     </div>
                     <div class="actions">
@@ -144,7 +144,7 @@
                             <span>Nueva Factura</span>
                         </button>
                         <button class="btn btn-primary" onclick="document.getElementById('importFacturasInput').click()">
-                            <span>↑</span>
+                            <span>&uarr;</span>
                             <span>Importar</span>
                         </button>
                     </div>
@@ -160,7 +160,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">💰</div>
+                        <div class="card-icon">$</div>
                         <div class="card-title">Cobros</div>
                     </div>
                     <div class="actions">
@@ -169,7 +169,7 @@
                             <span>Nuevo Cobro</span>
                         </button>
                         <button class="btn btn-primary" onclick="document.getElementById('importCobrosInput').click()">
-                            <span>↑</span>
+                            <span>&uarr;</span>
                             <span>Importar</span>
                         </button>
                     </div>
@@ -185,7 +185,7 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📈</div>
+                        <div class="card-icon">R</div>
                         <div class="card-title">Generar Informe de Comisiones</div>
                     </div>
                 </div>
@@ -209,7 +209,6 @@
                 </div>
 
                 <button class="btn btn-primary" onclick="generarInforme()">
-                    <span>📊</span>
                     <span>Generar Informe Excel</span>
                 </button>
 
@@ -217,21 +216,21 @@
             </div>
         </div>
 
-        <!-- TAB: HISTÓRICO INFORMES -->
+        <!-- TAB: HISTORICO INFORMES -->
         <div id="tab-historico" class="tab-content">
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📜</div>
-                        <div class="card-title">Histórico de Informes</div>
+                        <div class="card-icon">H</div>
+                        <div class="card-title">Hist&oacute;rico de Informes</div>
                     </div>
-                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar histórico">
-                        🗑️
+                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar hist&oacute;rico">
+                        &times;
                     </button>
                 </div>
 
                 <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-                    <input type="text" id="buscarHistorico" placeholder="🔍 Buscar en histórico..." style="flex: 1; min-width: 200px;">
+                    <input type="text" id="buscarHistorico" placeholder="Buscar en hist&oacute;rico..." style="flex: 1; min-width: 200px;">
                     <select id="filtroShowroomHistorico" style="min-width: 200px;">
                         <option value="">Todos los showrooms</option>
                     </select>
@@ -243,21 +242,30 @@
     </div>
 
     <!-- MODALES -->
-    
+
     <!-- Modal Showroom -->
     <div id="modalShowroom" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalShowroomTitle">Nuevo Showroom</h3>
-                <button class="modal-close" onclick="cerrarModal('modalShowroom')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalShowroom')">&times;</button>
             </div>
             <div class="form-group">
                 <label for="showNombre">Nombre del Showroom *</label>
                 <input type="text" id="showNombre" required>
             </div>
-            <div class="form-group">
-                <label for="showComision">% Comisión *</label>
-                <input type="number" id="showComision" step="0.01" min="0" max="100" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="showComision">% Comisi&oacute;n *</label>
+                    <input type="number" id="showComision" step="0.01" min="0" max="100" required>
+                </div>
+                <div class="form-group">
+                    <label for="showIdioma">Idioma del Informe *</label>
+                    <select id="showIdioma" required>
+                        <option value="es">Espa&ntilde;ol</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalShowroom')">Cancelar</button>
@@ -271,7 +279,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalClienteTitle">Nuevo Cliente</h3>
-                <button class="modal-close" onclick="cerrarModal('modalCliente')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalCliente')">&times;</button>
             </div>
             <div class="form-group">
                 <label for="cliNombre">Nombre del Cliente *</label>
@@ -295,10 +303,10 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalPedidoTitle">Nuevo Pedido</h3>
-                <button class="modal-close" onclick="cerrarModal('modalPedido')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalPedido')">&times;</button>
             </div>
             <div class="form-group">
-                <label for="pedNumero">Número de Pedido *</label>
+                <label for="pedNumero">N&uacute;mero de Pedido *</label>
                 <input type="text" id="pedNumero" required>
             </div>
             <div class="form-group">
@@ -315,7 +323,7 @@
                 <div class="form-group">
                     <label for="pedMoneda">Moneda *</label>
                     <select id="pedMoneda" required>
-                        <option value="EUR">EUR (€)</option>
+                        <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
@@ -336,7 +344,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalFacturaTitle">Nueva Factura</h3>
-                <button class="modal-close" onclick="cerrarModal('modalFactura')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalFactura')">&times;</button>
             </div>
             <div class="form-group">
                 <label>Tipo de documento *</label>
@@ -346,7 +354,7 @@
                 </div>
             </div>
             <div class="form-group">
-                <label for="facNumero">Número de Factura *</label>
+                <label for="facNumero">N&uacute;mero de Factura *</label>
                 <input type="text" id="facNumero" required>
             </div>
             <div class="form-group">
@@ -373,7 +381,7 @@
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label for="facFecha">Fecha Emisión *</label>
+                    <label for="facFecha">Fecha Emisi&oacute;n *</label>
                     <input type="date" id="facFecha" required>
                 </div>
                 <div class="form-group">
@@ -385,7 +393,7 @@
                 <div class="form-group">
                     <label for="facMoneda">Moneda *</label>
                     <select id="facMoneda" required>
-                        <option value="EUR">EUR (€)</option>
+                        <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
@@ -393,7 +401,7 @@
                     <label for="facImporte" id="facImporteLabel">Importe *</label>
                     <input type="number" id="facImporte" step="0.01" min="0" required>
                     <small id="facImporteHelp" style="color: var(--gray-500); font-size: 13px; display: none; margin-top: 4px;">
-                        Introduce el importe en positivo. Se guardará como negativo.
+                        Introduce el importe en positivo. Se guardar&aacute; como negativo.
                     </small>
                 </div>
             </div>
@@ -409,7 +417,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalCobroTitle">Nuevo Cobro</h3>
-                <button class="modal-close" onclick="cerrarModal('modalCobro')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalCobro')">&times;</button>
             </div>
             <div class="form-group">
                 <label>Aplicar cobro a *</label>
@@ -452,7 +460,7 @@
                 <div class="form-group">
                     <label for="cobMoneda">Moneda *</label>
                     <select id="cobMoneda" required>
-                        <option value="EUR">EUR (€)</option>
+                        <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
@@ -468,12 +476,12 @@
         </div>
     </div>
 
-    <!-- Modal Confirmación Saldo Residual -->
+    <!-- Modal Confirmacion Saldo Residual -->
     <div id="modalSaldoResidual" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">⚠️ Saldo Residual Detectado</h3>
-                <button class="modal-close" onclick="cerrarModal('modalSaldoResidual')">×</button>
+                <h3 class="modal-title">Saldo Residual Detectado</h3>
+                <button class="modal-close" onclick="cerrarModal('modalSaldoResidual')">&times;</button>
             </div>
             <p style="margin-bottom: 24px; color: var(--gray-700);" id="mensajeSaldoResidual"></p>
             <div class="modal-footer">
