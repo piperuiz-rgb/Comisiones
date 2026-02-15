@@ -573,14 +573,6 @@ footer {
     font-size: 13px;
 }
 
-/* Charts grid */
-.charts-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    margin-bottom: 24px;
-}
-
 /* Sortable table headers */
 th.sortable {
     cursor: pointer;
@@ -652,10 +644,6 @@ th.sortable.sort-desc::after {
     .nav-tab {
         padding: 10px 14px;
         font-size: 12px;
-    }
-
-    .charts-grid {
-        grid-template-columns: 1fr;
     }
 
     .filter-bar {
