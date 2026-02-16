@@ -8,6 +8,9 @@ const DB = {
     _cache: {},
     _ready: false,
 
+    _listeners: [],
+    _ignoreNext: {},  // Evitar eco de nuestras propias escrituras
+
     // Inicializa cargando datos desde Firestore (con fallback a localStorage)
     init: async function() {
         try {
@@ -28,6 +31,8 @@ const DB = {
             await Promise.all(promises);
             DB._ready = true;
             console.log('Datos cargados desde Firestore');
+            // Activar sincronización en tiempo real
+            DB._startRealtimeSync();
         } catch(e) {
             console.warn('Error cargando desde Firestore, usando localStorage:', e);
             COLLECTIONS.forEach(col => {
@@ -37,15 +42,60 @@ const DB = {
         }
     },
 
+    // Escucha cambios en tiempo real de Firestore (sincroniza entre dispositivos)
+    _startRealtimeSync: function() {
+        COLLECTIONS.forEach(col => {
+            const unsub = db.collection('data').doc(col).onSnapshot(doc => {
+                if (DB._ignoreNext[col]) {
+                    DB._ignoreNext[col] = false;
+                    return;
+                }
+                if (doc.exists && doc.data().items) {
+                    const remoteData = doc.data().items;
+                    const localJson = JSON.stringify(DB._cache[col]);
+                    const remoteJson = JSON.stringify(remoteData);
+                    if (localJson !== remoteJson) {
+                        DB._cache[col] = remoteData;
+                        localStorage.setItem(col, remoteJson);
+                        console.log(`Sync: "${col}" actualizado desde otro dispositivo`);
+                        DB._refreshUI();
+                    }
+                }
+            }, err => {
+                console.warn(`Error en listener de "${col}":`, err);
+            });
+            DB._listeners.push(unsub);
+        });
+    },
+
+    // Refresca la pestaña activa tras recibir datos remotos
+    _refreshUI: function() {
+        const activeTab = document.querySelector('.tab-content.active');
+        if (!activeTab) return;
+        const tabId = activeTab.id.replace('tab-', '');
+        if (tabId === 'dashboard') cargarDashboard();
+        else if (tabId === 'showrooms') cargarTablaShowrooms();
+        else if (tabId === 'clientes') cargarTablaClientes();
+        else if (tabId === 'pedidos') cargarTablaPedidos();
+        else if (tabId === 'facturas') cargarTablaFacturas();
+        else if (tabId === 'cobros') cargarTablaCobros();
+        else if (tabId === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
+        else if (tabId === 'liquidaciones') cargarTablaLiquidaciones();
+        else if (tabId === 'historico') cargarHistoricoInformes();
+    },
+
     get: (key) => JSON.parse(JSON.stringify(DB._cache[key] || {})),
     getArray: (key) => JSON.parse(JSON.stringify(DB._cache[key] || [])),
     set: (key, data) => {
         DB._cache[key] = data;
         // Guardar en localStorage como respaldo offline
         localStorage.setItem(key, JSON.stringify(data));
+        // Marcar para ignorar el eco de onSnapshot de esta escritura
+        DB._ignoreNext[key] = true;
         // Guardar en Firestore (async)
         db.collection('data').doc(key).set({ items: data }).catch(e => {
             console.warn('Error guardando en Firestore:', e);
+            DB._ignoreNext[key] = false;
         });
     },
 
