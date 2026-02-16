@@ -13,5 +13,6 @@ firebase.initializeApp(firebaseConfig);
 
 // Initialize Firestore
 const db = firebase.firestore();
+db.settings({ experimentalForceLongPolling: true, merge: true });
 
 console.log("Firebase inicializado correctamente - Proyecto: comisiones-d1a47");
