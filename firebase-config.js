@@ -1,11 +1,11 @@
 // Firebase Configuration
 const firebaseConfig = {
-    apiKey: "AIzaSyBjUVtfkq-L2TgsxG5Iu20DZrz_457xYD4",
-    authDomain: "comisiones-d1a47.firebaseapp.com",
-    projectId: "comisiones-d1a47",
-    storageBucket: "comisiones-d1a47.firebasestorage.app",
-    messagingSenderId: "568383356013",
-    appId: "1:568383356013:web:83a200ae3b58fbac815364"
+    apiKey: "AIzaSyDG0i0jhZpuUoLN9YpgGm_MFgXSQCzz8D8",
+    authDomain: "comisiones-app-33035.firebaseapp.com",
+    projectId: "comisiones-app-33035",
+    storageBucket: "comisiones-app-33035.firebasestorage.app",
+    messagingSenderId: "788824483061",
+    appId: "1:788824483061:web:426710fdd532d64e53d1bc"
 };
 
 // Initialize Firebase
@@ -13,6 +13,5 @@ firebase.initializeApp(firebaseConfig);
 
 // Initialize Firestore
 const db = firebase.firestore();
-// Firestore auto-detects long polling when needed
 
-console.log("Firebase inicializado correctamente - Proyecto: comisiones-d1a47");
+console.log("Firebase inicializado correctamente - Proyecto: comisiones-app-33035");
