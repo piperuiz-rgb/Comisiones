@@ -1,27 +1,69 @@
 // ========================================
-// SISTEMA DE ALMACENAMIENTO
+// SISTEMA DE ALMACENAMIENTO (Firestore + caché en memoria)
 // ========================================
 
+const COLLECTIONS = ['showrooms', 'clientes', 'pedidos', 'facturas', 'cobros', 'liquidaciones', 'historicoInformes'];
+
 const DB = {
-    get: (key) => JSON.parse(localStorage.getItem(key) || '{}'),
-    getArray: (key) => JSON.parse(localStorage.getItem(key) || '[]'),
-    set: (key, data) => localStorage.setItem(key, JSON.stringify(data)),
-    
+    _cache: {},
+    _ready: false,
+
+    // Inicializa cargando datos desde Firestore (con fallback a localStorage)
+    init: async function() {
+        try {
+            const promises = COLLECTIONS.map(async (col) => {
+                const doc = await db.collection('data').doc(col).get();
+                if (doc.exists && doc.data().items) {
+                    DB._cache[col] = doc.data().items;
+                } else {
+                    // Migrar datos existentes de localStorage a Firestore
+                    const local = JSON.parse(localStorage.getItem(col) || '[]');
+                    DB._cache[col] = local;
+                    if (local.length > 0) {
+                        await db.collection('data').doc(col).set({ items: local });
+                        console.log(`Migrado "${col}" a Firestore (${local.length} registros)`);
+                    }
+                }
+            });
+            await Promise.all(promises);
+            DB._ready = true;
+            console.log('Datos cargados desde Firestore');
+        } catch(e) {
+            console.warn('Error cargando desde Firestore, usando localStorage:', e);
+            COLLECTIONS.forEach(col => {
+                DB._cache[col] = JSON.parse(localStorage.getItem(col) || '[]');
+            });
+            DB._ready = true;
+        }
+    },
+
+    get: (key) => JSON.parse(JSON.stringify(DB._cache[key] || {})),
+    getArray: (key) => JSON.parse(JSON.stringify(DB._cache[key] || [])),
+    set: (key, data) => {
+        DB._cache[key] = data;
+        // Guardar en localStorage como respaldo offline
+        localStorage.setItem(key, JSON.stringify(data));
+        // Guardar en Firestore (async)
+        db.collection('data').doc(key).set({ items: data }).catch(e => {
+            console.warn('Error guardando en Firestore:', e);
+        });
+    },
+
     getShowrooms: () => DB.getArray('showrooms'),
     setShowrooms: (data) => DB.set('showrooms', data),
-    
+
     getClientes: () => DB.getArray('clientes'),
     setClientes: (data) => DB.set('clientes', data),
-    
+
     getPedidos: () => DB.getArray('pedidos'),
     setPedidos: (data) => DB.set('pedidos', data),
-    
+
     getFacturas: () => DB.getArray('facturas'),
     setFacturas: (data) => DB.set('facturas', data),
-    
+
     getCobros: () => DB.getArray('cobros'),
     setCobros: (data) => DB.set('cobros', data),
-    
+
     getLiquidaciones: () => DB.getArray('liquidaciones'),
     setLiquidaciones: (data) => DB.set('liquidaciones', data),
 
@@ -330,7 +372,18 @@ function calcularEstadoPedido(pedidoId) {
 // INICIALIZACIÓN
 // ========================================
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Mostrar estado de carga mientras se conecta a Firestore
+    const container = document.querySelector('.container');
+    container.style.opacity = '0.4';
+    container.style.pointerEvents = 'none';
+
+    // Cargar datos desde Firestore (con fallback a localStorage)
+    await DB.init();
+
+    container.style.opacity = '1';
+    container.style.pointerEvents = '';
+
     // Configurar fechas por defecto
     const hoy = new Date();
     document.getElementById('cobFecha').valueAsDate = hoy;
