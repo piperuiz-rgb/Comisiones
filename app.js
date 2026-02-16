@@ -15,9 +15,11 @@ const DB = {
     init: async function() {
         try {
             const promises = COLLECTIONS.map(async (col) => {
+                console.log(`Firestore: leyendo "${col}"...`);
                 const doc = await db.collection('data').doc(col).get();
                 if (doc.exists && doc.data().items) {
                     DB._cache[col] = doc.data().items;
+                    console.log(`Firestore: "${col}" cargado (${DB._cache[col].length} registros)`);
                 } else {
                     // Migrar datos existentes de localStorage a Firestore
                     const local = JSON.parse(localStorage.getItem(col) || '[]');
@@ -93,8 +95,10 @@ const DB = {
         // Marcar para ignorar el eco de onSnapshot de esta escritura
         DB._ignoreNext[key] = true;
         // Guardar en Firestore (async)
-        db.collection('data').doc(key).set({ items: data }).catch(e => {
-            console.warn('Error guardando en Firestore:', e);
+        db.collection('data').doc(key).set({ items: data }).then(() => {
+            console.log(`Firestore: "${key}" guardado OK (${Array.isArray(data) ? data.length : 1} registros)`);
+        }).catch(e => {
+            console.error(`Firestore: ERROR guardando "${key}":`, e.code, e.message);
             DB._ignoreNext[key] = false;
         });
     },
