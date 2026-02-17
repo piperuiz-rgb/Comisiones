@@ -1760,6 +1760,11 @@ function modalPedido(id = null) {
         document.getElementById('pedFecha').value = pedido.fecha;
         document.getElementById('pedMoneda').value = pedido.moneda;
         document.getElementById('pedImporte').value = pedido.importe;
+        document.getElementById('pedCondicionesPago').value = pedido.condicionesPago || 'NET30';
+        if (pedido.condicionesPago === 'custom') {
+            document.getElementById('pedAnticipoPct').value = pedido.anticipoPct || 0;
+            document.getElementById('pedNetDays').value = pedido.netDays || 30;
+        }
         editandoId = id;
     } else {
         title.textContent = 'Nuevo Pedido';
@@ -1768,10 +1773,89 @@ function modalPedido(id = null) {
         document.getElementById('pedFecha').valueAsDate = new Date();
         document.getElementById('pedMoneda').value = 'EUR';
         document.getElementById('pedImporte').value = '';
+        document.getElementById('pedCondicionesPago').value = 'NET30';
+        document.getElementById('pedAnticipoPct').value = 0;
+        document.getElementById('pedNetDays').value = 30;
         editandoId = null;
     }
-    
+
+    calcularImporteCredito();
     modal.classList.add('visible');
+}
+
+// Payment terms -> anticipo percentage mapping
+const CONDICIONES_PAGO = {
+    'NET30':        { anticipoPct: 0,  netDays: 30, label: 'NET30' },
+    'NET60':        { anticipoPct: 0,  netDays: 60, label: 'NET60' },
+    'NET90':        { anticipoPct: 0,  netDays: 90, label: 'NET90' },
+    '30_ANT_NET30': { anticipoPct: 30, netDays: 30, label: '30% ant. + NET30' },
+    '50_ANT_NET30': { anticipoPct: 50, netDays: 30, label: '50% ant. + NET30' },
+    '50_ANT_NET60': { anticipoPct: 50, netDays: 60, label: '50% ant. + NET60' }
+};
+
+function getAnticipoPct(pedido) {
+    if (!pedido.condicionesPago) return 0;
+    if (pedido.condicionesPago === 'custom') return pedido.anticipoPct || 0;
+    const def = CONDICIONES_PAGO[pedido.condicionesPago];
+    return def ? def.anticipoPct : 0;
+}
+
+function getNetDays(pedido) {
+    if (!pedido.condicionesPago) return 30;
+    if (pedido.condicionesPago === 'custom') return pedido.netDays || 30;
+    const def = CONDICIONES_PAGO[pedido.condicionesPago];
+    return def ? def.netDays : 30;
+}
+
+function getImporteCredito(pedido) {
+    const pct = getAnticipoPct(pedido);
+    return pedido.importe * (1 - pct / 100);
+}
+
+function getImporteAnticipo(pedido) {
+    const pct = getAnticipoPct(pedido);
+    return pedido.importe * pct / 100;
+}
+
+function getCondicionesLabel(pedido) {
+    if (!pedido.condicionesPago) return 'NET30';
+    if (pedido.condicionesPago === 'custom') {
+        const pct = pedido.anticipoPct || 0;
+        const days = pedido.netDays || 30;
+        return pct > 0 ? `${pct}% ant. + NET${days}` : `NET${days}`;
+    }
+    const def = CONDICIONES_PAGO[pedido.condicionesPago];
+    return def ? def.label : pedido.condicionesPago;
+}
+
+function calcularImporteCredito() {
+    const condicion = document.getElementById('pedCondicionesPago').value;
+    const importe = parseFloat(document.getElementById('pedImporte').value) || 0;
+    const moneda = document.getElementById('pedMoneda').value;
+
+    // Show/hide custom fields
+    document.getElementById('pedCustomAnticipo').style.display = condicion === 'custom' ? 'flex' : 'none';
+
+    let anticipoPct = 0;
+    if (condicion === 'custom') {
+        anticipoPct = parseFloat(document.getElementById('pedAnticipoPct').value) || 0;
+    } else {
+        const def = CONDICIONES_PAGO[condicion];
+        anticipoPct = def ? def.anticipoPct : 0;
+    }
+
+    const importeAnticipo = importe * anticipoPct / 100;
+    const importeCredito = importe - importeAnticipo;
+
+    // Show breakdown if there's an anticipo
+    const desglose = document.getElementById('pedDesglose');
+    if (anticipoPct > 0 && importe > 0) {
+        desglose.style.display = 'block';
+        document.getElementById('pedImporteAnticipo').textContent = formatCurrency(importeAnticipo, moneda);
+        document.getElementById('pedImporteCredito').textContent = formatCurrency(importeCredito, moneda);
+    } else {
+        desglose.style.display = 'none';
+    }
 }
 
 function guardarPedido() {
@@ -1780,7 +1864,10 @@ function guardarPedido() {
     const fecha = document.getElementById('pedFecha').value;
     const moneda = document.getElementById('pedMoneda').value;
     const importe = parseFloat(document.getElementById('pedImporte').value);
-    
+    const condicionesPago = document.getElementById('pedCondicionesPago').value;
+    const anticipoPct = condicionesPago === 'custom' ? (parseFloat(document.getElementById('pedAnticipoPct').value) || 0) : null;
+    const netDays = condicionesPago === 'custom' ? (parseInt(document.getElementById('pedNetDays').value) || 30) : null;
+
     if (!numero || !clienteId || !fecha || isNaN(importe)) {
         alert('Por favor completa todos los campos');
         return;
@@ -1795,9 +1882,15 @@ function guardarPedido() {
         return;
     }
 
+    const paymentFields = { condicionesPago };
+    if (condicionesPago === 'custom') {
+        paymentFields.anticipoPct = anticipoPct;
+        paymentFields.netDays = netDays;
+    }
+
     if (editandoId) {
         const index = pedidos.findIndex(p => p.id === editandoId);
-        pedidos[index] = { ...pedidos[index], numero, clienteId, fecha, moneda, importe };
+        pedidos[index] = { ...pedidos[index], numero, clienteId, fecha, moneda, importe, ...paymentFields };
     } else {
         pedidos.push({
             id: generarId(),
@@ -1806,6 +1899,7 @@ function guardarPedido() {
             fecha,
             moneda,
             importe,
+            ...paymentFields,
             fechaCreacion: new Date().toISOString()
         });
     }
@@ -1855,6 +1949,11 @@ function cargarTablaPedidos() {
         const cliente = clientes.find(c => c.id === pedido.clienteId);
         const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
 
+        // Payment terms info
+        const anticipoPct = getAnticipoPct(pedido);
+        const importeCredito = getImporteCredito(pedido);
+        const condLabel = getCondicionesLabel(pedido);
+
         // Credit status
         const solicitud = solicitudes.find(s => s.pedidoId === pedido.id);
         let creditoHtml = '';
@@ -1864,9 +1963,14 @@ function cargarTablaPedidos() {
             creditoHtml = `<span class="badge badge-${badge}" style="cursor:pointer" onclick="modalSolicitudCredito('${solicitud.id}')" title="Click para ver/editar">${solicitud.estado}</span>`;
             if (solicitud.estado === 'aprobada' && solicitud.limiteCredito) {
                 creditoHtml += `<br><small style="color:var(--success)">${formatCurrency(solicitud.limiteCredito, solicitud.moneda || pedido.moneda)}</small>`;
+            } else if (anticipoPct > 0) {
+                creditoHtml += `<br><small>${formatCurrency(solicitud.importeCredito != null ? solicitud.importeCredito : importeCredito, pedido.moneda)}</small>`;
             }
         } else {
-            creditoHtml = `<button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="solicitarCreditoDesdePedido('${pedido.id}')">Solicitar</button>`;
+            if (anticipoPct > 0) {
+                creditoHtml = `<small style="color:var(--text-secondary);display:block;margin-bottom:4px">${formatCurrency(importeCredito, pedido.moneda)}</small>`;
+            }
+            creditoHtml += `<button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="solicitarCreditoDesdePedido('${pedido.id}')">Solicitar</button>`;
         }
 
         html += `
@@ -1875,7 +1979,7 @@ function cargarTablaPedidos() {
                 <td>${cliente ? cliente.nombre : '-'}</td>
                 <td>${showroom ? showroom.nombre : '-'}</td>
                 <td>${formatDate(pedido.fecha)}</td>
-                <td>${formatCurrency(pedido.importe, pedido.moneda)}</td>
+                <td>${formatCurrency(pedido.importe, pedido.moneda)}${anticipoPct > 0 ? `<br><small style="color:var(--text-secondary)">${condLabel}</small>` : (pedido.condicionesPago ? `<br><small style="color:var(--text-secondary)">${condLabel}</small>` : '')}</td>
                 <td style="text-align:center">${creditoHtml}</td>
                 <td>
                     <div class="actions">
@@ -4872,7 +4976,14 @@ function cargarInfoPedidoSolicitud() {
 
     document.getElementById('infSolCliente').textContent = cliente ? cliente.nombre : '-';
     document.getElementById('infSolShowroom').textContent = showroom ? showroom.nombre : '-';
-    document.getElementById('infSolImporte').textContent = formatCurrency(pedido.importe, pedido.moneda);
+
+    const anticipoPct = getAnticipoPct(pedido);
+    if (anticipoPct > 0) {
+        const importeCredito = getImporteCredito(pedido);
+        document.getElementById('infSolImporte').innerHTML = `${formatCurrency(pedido.importe, pedido.moneda)} <small style="color:var(--text-secondary)">(${getCondicionesLabel(pedido)} → credito: <strong style="color:var(--primary)">${formatCurrency(importeCredito, pedido.moneda)}</strong>)</small>`;
+    } else {
+        document.getElementById('infSolImporte').textContent = formatCurrency(pedido.importe, pedido.moneda);
+    }
     document.getElementById('infoPedidoSolicitud').style.display = 'block';
 }
 
@@ -4995,10 +5106,16 @@ function solicitarCreditoDesdePedido(pedidoId) {
         if (!confirm('Faltan datos para enviar a Hilldun:\n\n' + warnings.join('\n') + '\n\nCrear la solicitud de todas formas?')) return;
     }
 
+    // Calculate credit amount based on payment terms
+    const importeCredito = getImporteCredito(pedido);
+    const importeAnticipo = getImporteAnticipo(pedido);
+    const anticipoPct = getAnticipoPct(pedido);
+    const netDays = getNetDays(pedido);
+
     // Create solicitud
     const hoy = new Date().toISOString().split('T')[0];
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + 30);
+    endDate.setDate(endDate.getDate() + netDays);
     const fin = endDate.toISOString().split('T')[0];
 
     const solicitudes = DB.getSolicitudesCredito();
@@ -5009,6 +5126,9 @@ function solicitarCreditoDesdePedido(pedidoId) {
         fecha: hoy,
         estado: 'pendiente',
         importePedido: pedido.importe,
+        importeCredito: importeCredito,
+        importeAnticipo: importeAnticipo,
+        anticipoPct: anticipoPct,
         moneda: pedido.moneda,
         deliveryStartDate: hoy,
         deliveryEndDate: fin,
@@ -5024,9 +5144,17 @@ function solicitarCreditoDesdePedido(pedidoId) {
     solicitudes.push(nuevaSolicitud);
     DB.setSolicitudesCredito(solicitudes);
 
+    // Confirm message with breakdown
+    let confirmMsg = `Solicitud creada para pedido ${pedido.numero}.`;
+    if (anticipoPct > 0) {
+        confirmMsg += `\n\nImporte total: ${formatCurrency(pedido.importe, pedido.moneda)}`;
+        confirmMsg += `\nAnticipo (${anticipoPct}%): ${formatCurrency(importeAnticipo, pedido.moneda)}`;
+        confirmMsg += `\nA credito Hilldun: ${formatCurrency(importeCredito, pedido.moneda)}`;
+    }
+
     // Ask if user wants to generate CSV now
     if (hasConfig && hasAddress) {
-        if (confirm(`Solicitud creada para pedido ${pedido.numero}.\n\nGenerar y descargar el CSV para Hilldun ahora?`)) {
+        if (confirm(confirmMsg + '\n\nGenerar y descargar el CSV para Hilldun ahora?')) {
             generarCSVCreditRequestsParaPedido(nuevaSolicitud.id);
         }
     }
@@ -5057,11 +5185,14 @@ function generarCSVCreditRequestsParaPedido(solicitudId) {
         'Currency', 'BatchID'
     ];
 
+    // Use credit amount (importeCredito) if available, otherwise fall back to importePedido
+    const importeParaHilldun = sol.importeCredito != null ? sol.importeCredito : (sol.importePedido || 0);
+
     const batchId = generarBatchId();
     const row = [
         getHilldunClientCode(moneda),
         pedido ? pedido.numero : '', sol.poNumber || (pedido ? pedido.numero : ''),
-        Math.round(sol.importePedido || 0),
+        Math.round(importeParaHilldun),
         formatDateHilldun(pedido ? pedido.fecha : sol.fecha),
         formatDateHilldun(sol.deliveryStartDate || sol.fecha),
         formatDateHilldun(sol.deliveryEndDate || ''),
@@ -5072,7 +5203,7 @@ function generarCSVCreditRequestsParaPedido(solicitudId) {
         cliente ? (cliente.zip || '') : '', cliente ? (cliente.country || '') : '',
         cliente ? (cliente.contact || '') : '', cliente ? (cliente.phone || '') : '',
         cliente ? (cliente.email || '') : '', cliente ? (cliente.vatRegistration || '') : '',
-        1, sol.importePedido || 0, moneda, batchId
+        1, importeParaHilldun, moneda, batchId
     ];
 
     const csvLines = [header.map(escapeCsvField).join(','), row.map(escapeCsvField).join(',')];
@@ -5194,7 +5325,7 @@ function generarCSVCreditRequests() {
     ];
 
     const batchId = generarBatchId();
-    const totalAmount = solicitudes.reduce((sum, s) => sum + (s.importePedido || 0), 0);
+    const totalAmount = solicitudes.reduce((sum, s) => sum + (s.importeCredito != null ? s.importeCredito : (s.importePedido || 0)), 0);
     const count = solicitudes.length;
     const warnings = [];
 
@@ -5202,6 +5333,7 @@ function generarCSVCreditRequests() {
         const pedido = pedidos.find(p => p.id === sol.pedidoId);
         const cliente = clientes.find(c => c.id === sol.clienteId);
         const moneda = sol.moneda || (pedido ? pedido.moneda : 'EUR');
+        const importeParaHilldun = sol.importeCredito != null ? sol.importeCredito : (sol.importePedido || (pedido ? pedido.importe : 0));
 
         if (cliente && !cliente.phone) warnings.push(`Cliente "${cliente.nombre}" sin telefono.`);
         if (cliente && !cliente.address1) warnings.push(`Cliente "${cliente.nombre}" sin direccion.`);
@@ -5210,7 +5342,7 @@ function generarCSVCreditRequests() {
             getHilldunClientCode(moneda),
             pedido ? pedido.numero : '',
             sol.poNumber || (pedido ? pedido.numero : ''),
-            Math.round(sol.importePedido || (pedido ? pedido.importe : 0)),
+            Math.round(importeParaHilldun),
             formatDateHilldun(pedido ? pedido.fecha : sol.fecha),
             formatDateHilldun(sol.deliveryStartDate || sol.fecha),
             formatDateHilldun(sol.deliveryEndDate || ''),

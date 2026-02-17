@@ -533,15 +533,47 @@
                 </div>
                 <div class="form-group">
                     <label for="pedMoneda">Moneda *</label>
-                    <select id="pedMoneda" required>
+                    <select id="pedMoneda" required onchange="calcularImporteCredito()">
                         <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
             </div>
             <div class="form-group">
-                <label for="pedImporte">Importe *</label>
-                <input type="number" id="pedImporte" step="0.01" min="0" required>
+                <label for="pedImporte">Importe Total *</label>
+                <input type="number" id="pedImporte" step="0.01" min="0" required oninput="calcularImporteCredito()">
+            </div>
+            <div class="form-group">
+                <label for="pedCondicionesPago">Condiciones de Pago</label>
+                <select id="pedCondicionesPago" onchange="calcularImporteCredito()">
+                    <option value="NET30">NET30 (100% cr&eacute;dito)</option>
+                    <option value="NET60">NET60 (100% cr&eacute;dito)</option>
+                    <option value="NET90">NET90 (100% cr&eacute;dito)</option>
+                    <option value="30_ANT_NET30">30% anticipo + NET30</option>
+                    <option value="50_ANT_NET30">50% anticipo + NET30</option>
+                    <option value="50_ANT_NET60">50% anticipo + NET60</option>
+                    <option value="custom">Personalizado...</option>
+                </select>
+            </div>
+            <div id="pedCustomAnticipo" class="form-row" style="display:none">
+                <div class="form-group">
+                    <label for="pedAnticipoPct">% Anticipo</label>
+                    <input type="number" id="pedAnticipoPct" step="1" min="0" max="100" value="0" oninput="calcularImporteCredito()">
+                </div>
+                <div class="form-group">
+                    <label for="pedNetDays">D&iacute;as cr&eacute;dito</label>
+                    <input type="number" id="pedNetDays" step="1" min="1" value="30">
+                </div>
+            </div>
+            <div id="pedDesglose" class="form-group" style="display:none; background:var(--bg-dark); padding:12px; border-radius:8px; margin-top:4px">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px">
+                    <span>Anticipo:</span>
+                    <strong id="pedImporteAnticipo">0,00 &euro;</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                    <span>A cr&eacute;dito (Hilldun):</span>
+                    <strong id="pedImporteCredito" style="color:var(--primary)">0,00 &euro;</strong>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalPedido')">Cancelar</button>
