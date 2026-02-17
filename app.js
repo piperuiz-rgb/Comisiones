@@ -29,7 +29,10 @@ const DB = {
         if (historico.length > 100) historico.pop(); // Máximo 100
         DB.set('historicoInformes', historico);
     },
-    clearHistoricoInformes: () => DB.set('historicoInformes', [])
+    clearHistoricoInformes: () => DB.set('historicoInformes', []),
+
+    getSolicitudesCredito: () => DB.getArray('solicitudesCredito'),
+    setSolicitudesCredito: (data) => DB.set('solicitudesCredito', data)
 };
 
 // ========================================
@@ -100,6 +103,7 @@ function switchTab(tabName) {
     if (tabName === 'cobros') cargarTablaCobros();
     if (tabName === 'informes') cargarSelectShowrooms();
     if (tabName === 'historico') cargarHistoricoInformes();
+    if (tabName === 'hilldun') cargarTablaHilldun();
 }
 
 // ========================================
@@ -1450,12 +1454,13 @@ function cargarTablaPedidos() {
         </div>
     `;
     
-    html += '<table><thead><tr><th>Nº Pedido</th><th>Cliente</th><th>Showroom</th><th>Fecha</th><th>Importe</th><th>Acciones</th></tr></thead><tbody id="pedidosTableBody">';
-    
+    html += '<table><thead><tr><th>Nº Pedido</th><th>Cliente</th><th>Showroom</th><th>Fecha</th><th>Importe</th><th>Crédito Hilldun</th><th>Acciones</th></tr></thead><tbody id="pedidosTableBody">';
+
     pedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(pedido => {
         const cliente = clientes.find(c => c.id === pedido.clienteId);
         const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
-        
+        const solicitudCredito = obtenerEstadoCreditoPedido(pedido.id);
+
         html += `
             <tr data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}">
                 <td><strong>${pedido.numero}</strong></td>
@@ -1463,6 +1468,7 @@ function cargarTablaPedidos() {
                 <td>${showroom ? showroom.nombre : '-'}</td>
                 <td>${formatDate(pedido.fecha)}</td>
                 <td>${formatCurrency(pedido.importe, pedido.moneda)}</td>
+                <td>${solicitudCredito ? getBadgeCredito(solicitudCredito.estado) : '<span class="badge" style="background:#F1F5F9;color:#64748B;">-</span>'}</td>
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-icon" onclick="modalPedido('${pedido.id}')">✏️</button>
@@ -2661,21 +2667,328 @@ function limpiarHistoricoInformes() {
 }
 
 
+// ========================================
+// MÓDULO: HILLDUN - SOLICITUDES DE CRÉDITO
+// ========================================
+
+function obtenerEstadoCreditoPedido(pedidoId) {
+    const solicitudes = DB.getSolicitudesCredito().filter(s => s.pedidoId === pedidoId);
+    if (solicitudes.length === 0) return null;
+    // Devolver la solicitud más reciente
+    return solicitudes.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion))[0];
+}
+
+function getBadgeCredito(estado) {
+    switch (estado) {
+        case 'aprobada': return '<span class="badge badge-success">Aprobada</span>';
+        case 'rechazada': return '<span class="badge badge-danger">Rechazada</span>';
+        case 'enviada': return '<span class="badge badge-info">Enviada</span>';
+        case 'pendiente': return '<span class="badge badge-warning">Pendiente</span>';
+        default: return '<span class="badge" style="background:#F1F5F9;color:#64748B;">Sin solicitud</span>';
+    }
+}
+
+function cargarTablaHilldun() {
+    const solicitudes = DB.getSolicitudesCredito();
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+    const container = document.getElementById('hilldunTable');
+
+    // Estadísticas
+    const total = solicitudes.length;
+    const aprobadas = solicitudes.filter(s => s.estado === 'aprobada').length;
+    const pendientes = solicitudes.filter(s => s.estado === 'pendiente' || s.estado === 'enviada').length;
+    const rechazadas = solicitudes.filter(s => s.estado === 'rechazada').length;
+
+    document.getElementById('hilldunStats').innerHTML = `
+        <div class="stat-card">
+            <div class="stat-label">Total Solicitudes</div>
+            <div class="stat-value">${total}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Aprobadas</div>
+            <div class="stat-value" style="color: var(--success);">${aprobadas}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">En Proceso</div>
+            <div class="stat-value" style="color: var(--warning);">${pendientes}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Rechazadas</div>
+            <div class="stat-value" style="color: var(--danger);">${rechazadas}</div>
+        </div>
+    `;
+
+    if (solicitudes.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">🏦</div><p>No hay solicitudes de crédito</p><p style="font-size: 14px; margin-top: 8px;">Crea una nueva solicitud para enviar a Hilldun</p></div>';
+        return;
+    }
+
+    let html = '<table><thead><tr><th>Fecha</th><th>Pedido</th><th>Cliente</th><th>Showroom</th><th>Importe</th><th>Estado</th><th>Ref. Hilldun</th><th>Acciones</th></tr></thead><tbody id="hilldunTableBody">';
+
+    solicitudes.sort((a, b) => new Date(b.fechaCreacion) - new Date(a.fechaCreacion)).forEach(sol => {
+        const pedido = pedidos.find(p => p.id === sol.pedidoId);
+        const cliente = clientes.find(c => c.id === sol.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+
+        html += `
+            <tr data-estado="${sol.estado}" data-busqueda="${(pedido ? pedido.numero : '').toLowerCase()} ${(cliente ? cliente.nombre : '').toLowerCase()}">
+                <td>${formatDate(sol.fecha)}</td>
+                <td><strong>${pedido ? pedido.numero : '-'}</strong></td>
+                <td>${cliente ? cliente.nombre : '-'}</td>
+                <td>${showroom ? showroom.nombre : '-'}</td>
+                <td>${formatCurrency(sol.importePedido, sol.moneda)}</td>
+                <td>${getBadgeCredito(sol.estado)}</td>
+                <td>${sol.referencia || '-'}</td>
+                <td>
+                    <div class="actions">
+                        <button class="btn btn-secondary btn-icon" onclick="modalSolicitudCredito('${sol.id}')" title="Editar">✏️</button>
+                        <button class="btn btn-danger btn-icon" onclick="eliminarSolicitudCredito('${sol.id}')" title="Eliminar">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    // Event listeners para filtros
+    document.getElementById('buscarSolicitud').addEventListener('input', filtrarSolicitudes);
+    document.getElementById('filtroEstadoSolicitud').addEventListener('change', filtrarSolicitudes);
+}
+
+function filtrarSolicitudes() {
+    const busqueda = document.getElementById('buscarSolicitud').value.toLowerCase();
+    const estadoFiltro = document.getElementById('filtroEstadoSolicitud').value;
+
+    const filas = document.querySelectorAll('#hilldunTableBody tr');
+
+    filas.forEach(fila => {
+        const estado = fila.getAttribute('data-estado');
+        const texto = fila.getAttribute('data-busqueda');
+
+        const coincideBusqueda = texto.includes(busqueda);
+        const coincideEstado = !estadoFiltro || estado === estadoFiltro;
+
+        fila.style.display = (coincideBusqueda && coincideEstado) ? '' : 'none';
+    });
+}
+
+function toggleCamposRespuesta() {
+    const estado = document.getElementById('solEstado').value;
+    const campos = document.getElementById('camposRespuesta');
+    campos.style.display = (estado === 'aprobada' || estado === 'rechazada') ? 'block' : 'none';
+}
+
+function cargarInfoPedidoSolicitud() {
+    const pedidoId = document.getElementById('solPedido').value;
+    const infoBox = document.getElementById('infoPedidoSolicitud');
+
+    if (!pedidoId) {
+        infoBox.style.display = 'none';
+        return;
+    }
+
+    const pedido = DB.getPedidos().find(p => p.id === pedidoId);
+    const cliente = pedido ? DB.getClientes().find(c => c.id === pedido.clienteId) : null;
+    const showroom = cliente ? DB.getShowrooms().find(s => s.id === cliente.showroomId) : null;
+
+    document.getElementById('infSolCliente').textContent = cliente ? cliente.nombre : '-';
+    document.getElementById('infSolShowroom').textContent = showroom ? showroom.nombre : '-';
+    document.getElementById('infSolImporte').textContent = pedido ? formatCurrency(pedido.importe, pedido.moneda) : '-';
+    infoBox.style.display = 'block';
+}
+
+function modalSolicitudCredito(id = null) {
+    const modal = document.getElementById('modalSolicitudCredito');
+    const title = document.getElementById('modalSolicitudCreditoTitle');
+
+    // Cargar pedidos en el select
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+    const select = document.getElementById('solPedido');
+    select.innerHTML = '<option value="">Seleccionar pedido...</option>';
+    pedidos.forEach(p => {
+        const cliente = clientes.find(c => c.id === p.clienteId);
+        select.innerHTML += `<option value="${p.id}">${p.numero} - ${cliente ? cliente.nombre : 'Sin cliente'} (${formatCurrency(p.importe, p.moneda)})</option>`;
+    });
+
+    if (id) {
+        const solicitudes = DB.getSolicitudesCredito();
+        const sol = solicitudes.find(s => s.id === id);
+
+        title.textContent = 'Editar Solicitud de Crédito';
+        document.getElementById('solPedido').value = sol.pedidoId;
+        document.getElementById('solFecha').value = sol.fecha;
+        document.getElementById('solEstado').value = sol.estado;
+        document.getElementById('solReferencia').value = sol.referencia || '';
+        document.getElementById('solFechaRespuesta').value = sol.fechaRespuesta || '';
+        document.getElementById('solLimiteCredito').value = sol.limiteCredito || '';
+        document.getElementById('solCondiciones').value = sol.condiciones || '';
+        document.getElementById('solNotas').value = sol.notas || '';
+        editandoId = id;
+        cargarInfoPedidoSolicitud();
+        toggleCamposRespuesta();
+    } else {
+        title.textContent = 'Nueva Solicitud de Crédito';
+        document.getElementById('solPedido').value = '';
+        document.getElementById('solFecha').valueAsDate = new Date();
+        document.getElementById('solEstado').value = 'pendiente';
+        document.getElementById('solReferencia').value = '';
+        document.getElementById('solFechaRespuesta').value = '';
+        document.getElementById('solLimiteCredito').value = '';
+        document.getElementById('solCondiciones').value = '';
+        document.getElementById('solNotas').value = '';
+        document.getElementById('infoPedidoSolicitud').style.display = 'none';
+        document.getElementById('camposRespuesta').style.display = 'none';
+        editandoId = null;
+    }
+
+    modal.classList.add('visible');
+}
+
+function guardarSolicitudCredito() {
+    const pedidoId = document.getElementById('solPedido').value;
+    const fecha = document.getElementById('solFecha').value;
+    const estado = document.getElementById('solEstado').value;
+
+    if (!pedidoId || !fecha || !estado) {
+        alert('Por favor completa los campos obligatorios');
+        return;
+    }
+
+    const pedido = DB.getPedidos().find(p => p.id === pedidoId);
+    const cliente = pedido ? DB.getClientes().find(c => c.id === pedido.clienteId) : null;
+
+    const referencia = document.getElementById('solReferencia').value.trim();
+    const fechaRespuesta = document.getElementById('solFechaRespuesta').value;
+    const limiteCredito = parseFloat(document.getElementById('solLimiteCredito').value) || 0;
+    const condiciones = document.getElementById('solCondiciones').value.trim();
+    const notas = document.getElementById('solNotas').value.trim();
+
+    const solicitudes = DB.getSolicitudesCredito();
+
+    if (editandoId) {
+        const index = solicitudes.findIndex(s => s.id === editandoId);
+        solicitudes[index] = {
+            ...solicitudes[index],
+            pedidoId,
+            clienteId: cliente ? cliente.id : '',
+            fecha,
+            estado,
+            importePedido: pedido ? pedido.importe : 0,
+            moneda: pedido ? pedido.moneda : 'EUR',
+            referencia,
+            fechaRespuesta,
+            limiteCredito,
+            condiciones,
+            notas
+        };
+    } else {
+        solicitudes.push({
+            id: generarId(),
+            pedidoId,
+            clienteId: cliente ? cliente.id : '',
+            fecha,
+            estado,
+            importePedido: pedido ? pedido.importe : 0,
+            moneda: pedido ? pedido.moneda : 'EUR',
+            referencia,
+            fechaRespuesta,
+            limiteCredito,
+            condiciones,
+            notas,
+            fechaCreacion: new Date().toISOString()
+        });
+    }
+
+    DB.setSolicitudesCredito(solicitudes);
+    cerrarModal('modalSolicitudCredito');
+    cargarTablaHilldun();
+    showAlert('hilldunAlert', `Solicitud ${editandoId ? 'actualizada' : 'creada'} correctamente`, 'success');
+}
+
+function eliminarSolicitudCredito(id) {
+    if (!confirm('¿Eliminar esta solicitud de crédito?')) return;
+
+    const solicitudes = DB.getSolicitudesCredito().filter(s => s.id !== id);
+    DB.setSolicitudesCredito(solicitudes);
+    cargarTablaHilldun();
+    showAlert('hilldunAlert', 'Solicitud eliminada', 'success');
+}
+
+function exportarSolicitudesCredito() {
+    const solicitudes = DB.getSolicitudesCredito();
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+
+    if (solicitudes.length === 0) {
+        alert('No hay solicitudes para exportar');
+        return;
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // Hoja resumen
+    const data = [
+        ['SOLICITUDES DE CRÉDITO - HILLDUN'],
+        ['Charo Ruiz Ibiza'],
+        [`Generado: ${new Date().toLocaleDateString('es-ES')}`],
+        [''],
+        ['Fecha Solicitud', 'Nº Pedido', 'Cliente', 'Showroom', 'Importe Pedido', 'Moneda', 'Estado', 'Ref. Hilldun', 'Fecha Respuesta', 'Limite Crédito', 'Condiciones', 'Notas']
+    ];
+
+    solicitudes.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(sol => {
+        const pedido = pedidos.find(p => p.id === sol.pedidoId);
+        const cliente = clientes.find(c => c.id === sol.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+
+        data.push([
+            sol.fecha,
+            pedido ? pedido.numero : '-',
+            cliente ? cliente.nombre : '-',
+            showroom ? showroom.nombre : '-',
+            sol.importePedido,
+            sol.moneda,
+            sol.estado.charAt(0).toUpperCase() + sol.estado.slice(1),
+            sol.referencia || '',
+            sol.fechaRespuesta || '',
+            sol.limiteCredito || '',
+            sol.condiciones || '',
+            sol.notas || ''
+        ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [
+        { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 20 },
+        { wch: 15 }, { wch: 8 }, { wch: 12 }, { wch: 15 },
+        { wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 30 }
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Solicitudes Crédito');
+
+    XLSX.writeFile(wb, `Solicitudes_Credito_Hilldun_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+
 function calcularEstadoFactura(facturaId) {
     const factura = DB.getFacturas().find(f => f.id === facturaId);
     if (!factura) return { estado: 'pendiente', cobrado: 0, pendiente: 0 };
-    
+
     const cobros = DB.getCobros().filter(c => c.facturaId === facturaId);
     const totalCobrado = cobros.reduce((sum, c) => sum + c.importe, 0);
     const pendiente = factura.importe - totalCobrado;
-    
+
     let estado = 'pendiente';
     if (totalCobrado >= factura.importe) {
         estado = 'cobrada';
     } else if (totalCobrado > 0) {
         estado = 'parcial';
     }
-    
+
     return { estado, cobrado: totalCobrado, pendiente: Math.max(0, pendiente) };
 }
 

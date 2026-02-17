@@ -31,6 +31,7 @@
             <button class="nav-tab" onclick="switchTab('cobros')">💰 Cobros</button>
             <button class="nav-tab" onclick="switchTab('informes')">📈 Informes</button>
             <button class="nav-tab" onclick="switchTab('historico')">📜 Histórico Informes</button>
+            <button class="nav-tab" onclick="switchTab('hilldun')">🏦 Hilldun Crédito</button>
         </div>
 
         <!-- TAB: FACTURAS PENDIENTES -->
@@ -239,6 +240,45 @@
                 <div id="historicoInformesContainer"></div>
             </div>
         </div>
+        <!-- TAB: HILLDUN CRÉDITO -->
+        <div id="tab-hilldun" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">🏦</div>
+                        <div class="card-title">Solicitudes de Crédito - Hilldun</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalSolicitudCredito()">
+                            <span>+</span>
+                            <span>Nueva Solicitud</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="exportarSolicitudesCredito()">
+                            <span>↓</span>
+                            <span>Exportar Excel</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stats-grid" id="hilldunStats"></div>
+
+                <div class="alert alert-info" id="hilldunAlert"></div>
+
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <input type="text" id="buscarSolicitud" placeholder="Buscar por pedido o cliente..." style="flex: 1; min-width: 200px;">
+                    <select id="filtroEstadoSolicitud" style="min-width: 180px;">
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="enviada">Enviada a Hilldun</option>
+                        <option value="aprobada">Aprobada</option>
+                        <option value="rechazada">Rechazada</option>
+                    </select>
+                </div>
+
+                <div class="table-container" id="hilldunTable"></div>
+            </div>
+        </div>
+
     </div>
 
     <!-- MODALES -->
@@ -431,6 +471,79 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalCobro')">Cancelar</button>
                 <button class="btn btn-primary" onclick="guardarCobro()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Solicitud de Crédito Hilldun -->
+    <div id="modalSolicitudCredito" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalSolicitudCreditoTitle">Nueva Solicitud de Crédito</h3>
+                <button class="modal-close" onclick="cerrarModal('modalSolicitudCredito')">×</button>
+            </div>
+            <div class="form-group">
+                <label for="solPedido">Pedido *</label>
+                <select id="solPedido" required onchange="cargarInfoPedidoSolicitud()">
+                    <option value="">Seleccionar pedido...</option>
+                </select>
+            </div>
+            <div id="infoPedidoSolicitud" class="info-box" style="display:none;">
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Cliente:</span>
+                    <strong id="infSolCliente">-</strong>
+                </div>
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Showroom:</span>
+                    <strong id="infSolShowroom">-</strong>
+                </div>
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Importe del Pedido:</span>
+                    <strong id="infSolImporte">-</strong>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="solFecha">Fecha Solicitud *</label>
+                    <input type="date" id="solFecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="solEstado">Estado *</label>
+                    <select id="solEstado" required onchange="toggleCamposRespuesta()">
+                        <option value="pendiente">Pendiente</option>
+                        <option value="enviada">Enviada a Hilldun</option>
+                        <option value="aprobada">Aprobada</option>
+                        <option value="rechazada">Rechazada</option>
+                    </select>
+                </div>
+            </div>
+            <div id="camposRespuesta" style="display:none;">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="solReferencia">Referencia Hilldun</label>
+                        <input type="text" id="solReferencia" placeholder="Ej: HD-2026-001">
+                    </div>
+                    <div class="form-group">
+                        <label for="solFechaRespuesta">Fecha Respuesta</label>
+                        <input type="date" id="solFechaRespuesta">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="solLimiteCredito">Limite de Crédito Aprobado</label>
+                    <input type="number" id="solLimiteCredito" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="solCondiciones">Condiciones</label>
+                    <textarea id="solCondiciones" placeholder="Términos y condiciones del crédito..."></textarea>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="solNotas">Notas</label>
+                <textarea id="solNotas" placeholder="Observaciones adicionales..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalSolicitudCredito')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarSolicitudCredito()">Guardar</button>
             </div>
         </div>
     </div>
