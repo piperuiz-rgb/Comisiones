@@ -1,5 +1,87 @@
 // ========================================
-// SISTEMA DE ALMACENAMIENTO (Firestore + caché en memoria)
+// I18N - TRADUCCIONES
+// ========================================
+
+const I18N = {
+    es: {
+        // Order statuses
+        confirmado: 'Confirmado',
+        en_preparacion: 'En preparacion',
+        preparado: 'Preparado',
+        enviado: 'Enviado',
+        entregado: 'Entregado',
+        // Credit statuses
+        pendiente: 'Pendiente',
+        enviada: 'Enviada',
+        aprobada: 'Aprobada',
+        rechazada: 'Rechazada',
+        // Table headers
+        orderNumber: 'N. Pedido',
+        joorPO: 'Joor PO',
+        client: 'Cliente',
+        date: 'Fecha',
+        amount: 'Importe',
+        paymentTerms: 'Condiciones',
+        status: 'Estado',
+        shipping: 'Envio',
+        trackingNumber: 'N. Seguimiento',
+        credit: 'Credito',
+        advance: 'Anticipo',
+        creditPortion: 'A credito',
+        // Portal
+        portalTitle: 'Portal Pedidos',
+        portalSubtitle: 'Consulta el estado de tus pedidos',
+        allStatuses: 'Todos los estados',
+        search: 'Buscar pedido...',
+        noOrders: 'No hay pedidos registrados',
+        shippingMethod: 'Metodo de envio',
+        orderDetails: 'Detalles del pedido',
+        total: 'Total',
+        creditStatus: 'Estado credito',
+        backToApp: 'Volver a la app'
+    },
+    en: {
+        confirmado: 'Confirmed',
+        en_preparacion: 'In preparation',
+        preparado: 'Ready',
+        enviado: 'Shipped',
+        entregado: 'Delivered',
+        pendiente: 'Pending',
+        enviada: 'Sent',
+        aprobada: 'Approved',
+        rechazada: 'Rejected',
+        orderNumber: 'Order No.',
+        joorPO: 'Joor PO',
+        client: 'Client',
+        date: 'Date',
+        amount: 'Amount',
+        paymentTerms: 'Terms',
+        status: 'Status',
+        shipping: 'Shipping',
+        trackingNumber: 'Tracking No.',
+        credit: 'Credit',
+        advance: 'Advance',
+        creditPortion: 'On credit',
+        portalTitle: 'Orders Portal',
+        portalSubtitle: 'Check the status of your orders',
+        allStatuses: 'All statuses',
+        search: 'Search order...',
+        noOrders: 'No orders found',
+        shippingMethod: 'Shipping method',
+        orderDetails: 'Order details',
+        total: 'Total',
+        creditStatus: 'Credit status',
+        backToApp: 'Back to app'
+    }
+};
+
+function t(key, lang) {
+    lang = lang || 'es';
+    return (I18N[lang] && I18N[lang][key]) || (I18N.es[key]) || key;
+}
+
+// ========================================
+// SISTEMA DE ALMACENAMIENTO (Firestore + cache en memoria)
 // ========================================
 
 const COLLECTIONS = ['showrooms', 'clientes', 'pedidos', 'facturas', 'cobros', 'liquidaciones', 'historicoInformes', 'solicitudesCredito', 'hilldunConfig'];
@@ -707,6 +789,7 @@ function cargarTablaShowrooms() {
                 <td><span class="badge badge-info">${idiomaLabel}</span></td>
                 <td>
                     <div class="actions">
+                        <button class="btn btn-primary btn-icon" onclick="abrirPortalShowroom('${show.id}')" title="Portal Pedidos">Portal</button>
                         <button class="btn btn-secondary btn-icon" onclick="modalShowroom('${show.id}')" title="Editar">Edit</button>
                         <button class="btn btn-danger btn-icon" onclick="eliminarShowroom('${show.id}')" title="Eliminar">Del</button>
                     </div>
@@ -1760,15 +1843,20 @@ function modalPedido(id = null) {
         document.getElementById('pedFecha').value = pedido.fecha;
         document.getElementById('pedMoneda').value = pedido.moneda;
         document.getElementById('pedImporte').value = pedido.importe;
+        document.getElementById('pedJoorPO').value = pedido.joorPO || '';
         document.getElementById('pedCondicionesPago').value = pedido.condicionesPago || 'NET30';
         if (pedido.condicionesPago === 'custom') {
             document.getElementById('pedAnticipoPct').value = pedido.anticipoPct || 0;
             document.getElementById('pedNetDays').value = pedido.netDays || 30;
         }
+        document.getElementById('pedEstado').value = pedido.estadoPedido || 'confirmado';
+        document.getElementById('pedMetodoEnvio').value = pedido.metodoEnvio || '';
+        document.getElementById('pedTracking').value = pedido.trackingNumber || '';
         editandoId = id;
     } else {
         title.textContent = 'Nuevo Pedido';
         document.getElementById('pedNumero').value = '';
+        document.getElementById('pedJoorPO').value = '';
         document.getElementById('pedCliente').value = '';
         document.getElementById('pedFecha').valueAsDate = new Date();
         document.getElementById('pedMoneda').value = 'EUR';
@@ -1776,6 +1864,9 @@ function modalPedido(id = null) {
         document.getElementById('pedCondicionesPago').value = 'NET30';
         document.getElementById('pedAnticipoPct').value = 0;
         document.getElementById('pedNetDays').value = 30;
+        document.getElementById('pedEstado').value = 'confirmado';
+        document.getElementById('pedMetodoEnvio').value = '';
+        document.getElementById('pedTracking').value = '';
         editandoId = null;
     }
 
@@ -1864,9 +1955,13 @@ function guardarPedido() {
     const fecha = document.getElementById('pedFecha').value;
     const moneda = document.getElementById('pedMoneda').value;
     const importe = parseFloat(document.getElementById('pedImporte').value);
+    const joorPO = document.getElementById('pedJoorPO').value.trim();
     const condicionesPago = document.getElementById('pedCondicionesPago').value;
     const anticipoPct = condicionesPago === 'custom' ? (parseFloat(document.getElementById('pedAnticipoPct').value) || 0) : null;
     const netDays = condicionesPago === 'custom' ? (parseInt(document.getElementById('pedNetDays').value) || 30) : null;
+    const estadoPedido = document.getElementById('pedEstado').value;
+    const metodoEnvio = document.getElementById('pedMetodoEnvio').value.trim();
+    const trackingNumber = document.getElementById('pedTracking').value.trim();
 
     if (!numero || !clienteId || !fecha || isNaN(importe)) {
         alert('Por favor completa todos los campos');
@@ -1882,15 +1977,15 @@ function guardarPedido() {
         return;
     }
 
-    const paymentFields = { condicionesPago };
+    const extraFields = { joorPO, condicionesPago, estadoPedido, metodoEnvio, trackingNumber };
     if (condicionesPago === 'custom') {
-        paymentFields.anticipoPct = anticipoPct;
-        paymentFields.netDays = netDays;
+        extraFields.anticipoPct = anticipoPct;
+        extraFields.netDays = netDays;
     }
 
     if (editandoId) {
         const index = pedidos.findIndex(p => p.id === editandoId);
-        pedidos[index] = { ...pedidos[index], numero, clienteId, fecha, moneda, importe, ...paymentFields };
+        pedidos[index] = { ...pedidos[index], numero, clienteId, fecha, moneda, importe, ...extraFields };
     } else {
         pedidos.push({
             id: generarId(),
@@ -1899,7 +1994,7 @@ function guardarPedido() {
             fecha,
             moneda,
             importe,
-            ...paymentFields,
+            ...extraFields,
             fechaCreacion: new Date().toISOString()
         });
     }
@@ -1931,17 +2026,28 @@ function cargarTablaPedidos() {
             <option value="">Todos los showrooms</option>
             ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
         </select>
+        <select id="filtroEstadoPedido">
+            <option value="">Todos los estados</option>
+            <option value="confirmado">Confirmado</option>
+            <option value="en_preparacion">En preparaci&oacute;n</option>
+            <option value="preparado">Preparado</option>
+            <option value="enviado">Enviado</option>
+            <option value="entregado">Entregado</option>
+        </select>
     </div>`;
 
     const solicitudes = DB.getSolicitudesCredito();
 
     html += `<table><thead><tr>
         <th class="sortable" data-col="numero" onclick="ordenarTabla('pedidosTableBody','numero','text')">N&ordm; Pedido</th>
+        <th>Joor PO</th>
         <th class="sortable" data-col="cliente" onclick="ordenarTabla('pedidosTableBody','cliente','text')">Cliente</th>
         <th class="sortable" data-col="showroom" onclick="ordenarTabla('pedidosTableBody','showroom','text')">Showroom</th>
         <th class="sortable" data-col="fecha" onclick="ordenarTabla('pedidosTableBody','fecha','date')">Fecha</th>
         <th class="sortable" data-col="importe" onclick="ordenarTabla('pedidosTableBody','importe','number')">Importe</th>
-        <th>Cr&eacute;dito Hilldun</th>
+        <th>Estado</th>
+        <th>Env&iacute;o</th>
+        <th>Cr&eacute;dito</th>
         <th>Acciones</th>
     </tr></thead><tbody id="pedidosTableBody">`;
 
@@ -1953,6 +2059,26 @@ function cargarTablaPedidos() {
         const anticipoPct = getAnticipoPct(pedido);
         const importeCredito = getImporteCredito(pedido);
         const condLabel = getCondicionesLabel(pedido);
+
+        // Order status badge
+        const estadoBadges = {
+            confirmado: 'secondary', en_preparacion: 'warning',
+            preparado: 'info', enviado: 'primary', entregado: 'success'
+        };
+        const estadoLabels = {
+            confirmado: 'Confirmado', en_preparacion: 'En prep.',
+            preparado: 'Preparado', enviado: 'Enviado', entregado: 'Entregado'
+        };
+        const estado = pedido.estadoPedido || 'confirmado';
+        const estadoHtml = `<span class="badge badge-${estadoBadges[estado] || 'secondary'}">${estadoLabels[estado] || estado}</span>`;
+
+        // Shipping info
+        let envioHtml = '-';
+        if (pedido.metodoEnvio || pedido.trackingNumber) {
+            envioHtml = '';
+            if (pedido.metodoEnvio) envioHtml += `<small>${pedido.metodoEnvio}</small>`;
+            if (pedido.trackingNumber) envioHtml += `${pedido.metodoEnvio ? '<br>' : ''}<code style="font-size:11px">${pedido.trackingNumber}</code>`;
+        }
 
         // Credit status
         const solicitud = solicitudes.find(s => s.pedidoId === pedido.id);
@@ -1974,12 +2100,15 @@ function cargarTablaPedidos() {
         }
 
         html += `
-            <tr data-sort-key="1" data-sort-numero="${pedido.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${pedido.fecha}" data-sort-importe="${pedido.importe}" data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}">
+            <tr data-sort-key="1" data-sort-numero="${pedido.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${pedido.fecha}" data-sort-importe="${pedido.importe}" data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}" data-joorpo="${(pedido.joorPO || '').toLowerCase()}" data-estado="${estado}">
                 <td><strong>${pedido.numero}</strong></td>
+                <td>${pedido.joorPO || '-'}</td>
                 <td>${cliente ? cliente.nombre : '-'}</td>
                 <td>${showroom ? showroom.nombre : '-'}</td>
                 <td>${formatDate(pedido.fecha)}</td>
-                <td>${formatCurrency(pedido.importe, pedido.moneda)}${anticipoPct > 0 ? `<br><small style="color:var(--text-secondary)">${condLabel}</small>` : (pedido.condicionesPago ? `<br><small style="color:var(--text-secondary)">${condLabel}</small>` : '')}</td>
+                <td>${formatCurrency(pedido.importe, pedido.moneda)}${pedido.condicionesPago ? `<br><small style="color:var(--text-secondary)">${condLabel}</small>` : ''}</td>
+                <td style="text-align:center">${estadoHtml}</td>
+                <td>${envioHtml}</td>
                 <td style="text-align:center">${creditoHtml}</td>
                 <td>
                     <div class="actions">
@@ -1998,25 +2127,30 @@ function cargarTablaPedidos() {
     document.getElementById('buscarPedido').addEventListener('input', filtrarPedidos);
     document.getElementById('filtroClientePedido').addEventListener('change', filtrarPedidos);
     document.getElementById('filtroShowroomPedido').addEventListener('change', filtrarPedidos);
+    document.getElementById('filtroEstadoPedido').addEventListener('change', filtrarPedidos);
 }
 
 function filtrarPedidos() {
     const busqueda = document.getElementById('buscarPedido').value.toLowerCase();
     const clienteFiltro = document.getElementById('filtroClientePedido').value;
     const showroomFiltro = document.getElementById('filtroShowroomPedido').value;
-    
+    const estadoFiltro = document.getElementById('filtroEstadoPedido').value;
+
     const filas = document.querySelectorAll('#pedidosTableBody tr');
-    
+
     filas.forEach(fila => {
         const numero = fila.getAttribute('data-numero');
+        const joorpo = fila.getAttribute('data-joorpo') || '';
         const cliente = fila.getAttribute('data-cliente');
         const showroom = fila.getAttribute('data-showroom');
-        
-        const coincideBusqueda = numero.includes(busqueda);
+        const estado = fila.getAttribute('data-estado');
+
+        const coincideBusqueda = numero.includes(busqueda) || joorpo.includes(busqueda);
         const coincideCliente = !clienteFiltro || cliente === clienteFiltro;
         const coincideShowroom = !showroomFiltro || showroom === showroomFiltro;
-        
-        if (coincideBusqueda && coincideCliente && coincideShowroom) {
+        const coincideEstado = !estadoFiltro || estado === estadoFiltro;
+
+        if (coincideBusqueda && coincideCliente && coincideShowroom && coincideEstado) {
             fila.style.display = '';
         } else {
             fila.style.display = 'none';
@@ -5575,5 +5709,168 @@ function importarCreditResponses(file) {
     };
     reader.readAsText(file);
     document.getElementById('importResponsesInput').value = '';
+}
+
+// ========================================
+// PORTAL DE SHOWROOM - VISTA PEDIDOS
+// ========================================
+
+function abrirPortalShowroom(showroomId) {
+    const showrooms = DB.getShowrooms();
+    const showroom = showrooms.find(s => s.id === showroomId);
+    if (!showroom) {
+        alert('Showroom no encontrado');
+        return;
+    }
+
+    const lang = showroom.idioma || 'es';
+
+    // Hide main app, show portal
+    document.getElementById('mainApp').style.display = 'none';
+    let portal = document.getElementById('showroomPortal');
+    if (!portal) {
+        portal = document.createElement('div');
+        portal.id = 'showroomPortal';
+        document.body.appendChild(portal);
+    }
+    portal.style.display = 'block';
+
+    renderPortalShowroom(showroomId, lang);
+}
+
+function cerrarPortalShowroom() {
+    const portal = document.getElementById('showroomPortal');
+    if (portal) portal.style.display = 'none';
+    document.getElementById('mainApp').style.display = 'block';
+}
+
+function renderPortalShowroom(showroomId, lang) {
+    const showrooms = DB.getShowrooms();
+    const showroom = showrooms.find(s => s.id === showroomId);
+    const clientes = DB.getClientes().filter(c => c.showroomId === showroomId);
+    const clienteIds = new Set(clientes.map(c => c.id));
+    const pedidos = DB.getPedidos().filter(p => clienteIds.has(p.clienteId));
+    const solicitudes = DB.getSolicitudesCredito();
+
+    const estadoOpciones = ['confirmado', 'en_preparacion', 'preparado', 'enviado', 'entregado'];
+
+    const portal = document.getElementById('showroomPortal');
+    let html = `
+    <div style="max-width:1400px; margin:0 auto; padding:20px">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px">
+            <div>
+                <h1 style="margin:0; color:var(--text-primary)">${showroom.nombre} - ${t('portalTitle', lang)}</h1>
+                <p style="color:var(--text-secondary); margin:4px 0 0">${t('portalSubtitle', lang)}</p>
+            </div>
+            <button class="btn btn-secondary" onclick="cerrarPortalShowroom()">${t('backToApp', lang)}</button>
+        </div>
+
+        <div class="filter-bar" style="margin-bottom:16px">
+            <input type="text" id="portalBuscar" placeholder="${t('search', lang)}">
+            <select id="portalFiltroEstado">
+                <option value="">${t('allStatuses', lang)}</option>
+                ${estadoOpciones.map(e => `<option value="${e}">${t(e, lang)}</option>`).join('')}
+            </select>
+        </div>
+    `;
+
+    if (pedidos.length === 0) {
+        html += `<div class="empty-state"><p>${t('noOrders', lang)}</p></div>`;
+    } else {
+        html += `<table><thead><tr>
+            <th>${t('orderNumber', lang)}</th>
+            <th>${t('joorPO', lang)}</th>
+            <th>${t('client', lang)}</th>
+            <th>${t('date', lang)}</th>
+            <th>${t('amount', lang)}</th>
+            <th>${t('paymentTerms', lang)}</th>
+            <th>${t('status', lang)}</th>
+            <th>${t('shipping', lang)}</th>
+            <th>${t('credit', lang)}</th>
+        </tr></thead><tbody id="portalTableBody">`;
+
+        pedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(pedido => {
+            const cliente = clientes.find(c => c.id === pedido.clienteId);
+            const estado = pedido.estadoPedido || 'confirmado';
+            const anticipoPct = getAnticipoPct(pedido);
+            const importeCredito = getImporteCredito(pedido);
+            const condLabel = getCondicionesLabel(pedido);
+
+            // Status badge
+            const estadoBadges = {
+                confirmado: 'secondary', en_preparacion: 'warning',
+                preparado: 'info', enviado: 'primary', entregado: 'success'
+            };
+            const estadoHtml = `<span class="badge badge-${estadoBadges[estado] || 'secondary'}">${t(estado, lang)}</span>`;
+
+            // Shipping
+            let envioHtml = '-';
+            if (pedido.metodoEnvio || pedido.trackingNumber) {
+                envioHtml = '';
+                if (pedido.metodoEnvio) envioHtml += `<small>${pedido.metodoEnvio}</small>`;
+                if (pedido.trackingNumber) envioHtml += `${pedido.metodoEnvio ? '<br>' : ''}<code style="font-size:11px">${pedido.trackingNumber}</code>`;
+            }
+
+            // Payment terms with breakdown
+            let termsHtml = condLabel || '-';
+            if (anticipoPct > 0) {
+                termsHtml += `<br><small style="color:var(--text-secondary)">${t('advance', lang)}: ${formatCurrency(pedido.importe * anticipoPct / 100, pedido.moneda)}</small>`;
+                termsHtml += `<br><small style="color:var(--primary)">${t('creditPortion', lang)}: ${formatCurrency(importeCredito, pedido.moneda)}</small>`;
+            }
+
+            // Credit status
+            const solicitud = solicitudes.find(s => s.pedidoId === pedido.id);
+            let creditoHtml = '-';
+            if (solicitud) {
+                const badges = { pendiente: 'warning', enviada: 'primary', aprobada: 'success', rechazada: 'danger' };
+                creditoHtml = `<span class="badge badge-${badges[solicitud.estado] || 'secondary'}">${t(solicitud.estado, lang)}</span>`;
+                if (solicitud.estado === 'aprobada' && solicitud.limiteCredito) {
+                    creditoHtml += `<br><small style="color:var(--success)">${formatCurrency(solicitud.limiteCredito, solicitud.moneda || pedido.moneda)}</small>`;
+                }
+            }
+
+            html += `
+                <tr data-numero="${pedido.numero.toLowerCase()}" data-joorpo="${(pedido.joorPO || '').toLowerCase()}" data-estado="${estado}">
+                    <td><strong>${pedido.numero}</strong></td>
+                    <td>${pedido.joorPO || '-'}</td>
+                    <td>${cliente ? cliente.nombre : '-'}</td>
+                    <td>${formatDate(pedido.fecha)}</td>
+                    <td>${formatCurrency(pedido.importe, pedido.moneda)}</td>
+                    <td>${termsHtml}</td>
+                    <td style="text-align:center">${estadoHtml}</td>
+                    <td>${envioHtml}</td>
+                    <td style="text-align:center">${creditoHtml}</td>
+                </tr>
+            `;
+        });
+
+        html += '</tbody></table>';
+    }
+
+    html += '</div>';
+    portal.innerHTML = html;
+
+    // Filters
+    if (pedidos.length > 0) {
+        document.getElementById('portalBuscar').addEventListener('input', filtrarPortal);
+        document.getElementById('portalFiltroEstado').addEventListener('change', filtrarPortal);
+    }
+}
+
+function filtrarPortal() {
+    const busqueda = document.getElementById('portalBuscar').value.toLowerCase();
+    const estadoFiltro = document.getElementById('portalFiltroEstado').value;
+    const filas = document.querySelectorAll('#portalTableBody tr');
+
+    filas.forEach(fila => {
+        const numero = fila.getAttribute('data-numero');
+        const joorpo = fila.getAttribute('data-joorpo') || '';
+        const estado = fila.getAttribute('data-estado');
+
+        const coincideBusqueda = !busqueda || numero.includes(busqueda) || joorpo.includes(busqueda);
+        const coincideEstado = !estadoFiltro || estado === estadoFiltro;
+
+        fila.style.display = (coincideBusqueda && coincideEstado) ? '' : 'none';
+    });
 }
 

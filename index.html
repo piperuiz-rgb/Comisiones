@@ -24,7 +24,7 @@
         </div>
     </header>
 
-    <div class="container">
+    <div id="mainApp" class="container">
         <!-- Barra de búsqueda global -->
         <div style="margin-bottom: 24px;">
             <input type="text" id="busquedaGlobal" placeholder="Buscar en todo el sistema (facturas, pedidos, clientes, showrooms)..." style="width: 100%; padding: 12px 16px; font-size: 14px;" oninput="busquedaGlobalHandler()">
@@ -521,6 +521,10 @@
                 <input type="text" id="pedNumero" required>
             </div>
             <div class="form-group">
+                <label for="pedJoorPO">Joor PO</label>
+                <input type="text" id="pedJoorPO" placeholder="N&uacute;mero de pedido en Joor">
+            </div>
+            <div class="form-group">
                 <label for="pedCliente">Cliente *</label>
                 <select id="pedCliente" required>
                     <option value="">Seleccionar cliente...</option>
@@ -573,6 +577,40 @@
                 <div style="display:flex; justify-content:space-between">
                     <span>A cr&eacute;dito (Hilldun):</span>
                     <strong id="pedImporteCredito" style="color:var(--primary)">0,00 &euro;</strong>
+                </div>
+            </div>
+            <hr style="border-color:var(--border); margin:16px 0">
+            <div class="form-group">
+                <label for="pedEstado">Estado del Pedido</label>
+                <select id="pedEstado">
+                    <option value="confirmado">Confirmado</option>
+                    <option value="en_preparacion">En preparaci&oacute;n</option>
+                    <option value="preparado">Preparado</option>
+                    <option value="enviado">Enviado</option>
+                    <option value="entregado">Entregado</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pedMetodoEnvio">M&eacute;todo de Env&iacute;o</label>
+                    <input type="text" id="pedMetodoEnvio" list="metodoEnvioList" placeholder="Ej: DHL Express">
+                    <datalist id="metodoEnvioList">
+                        <option value="DHL Express">
+                        <option value="FedEx">
+                        <option value="FedEx International Priority">
+                        <option value="UPS">
+                        <option value="UPS Express">
+                        <option value="TNT">
+                        <option value="SEUR">
+                        <option value="MRW">
+                        <option value="Correos Express">
+                        <option value="GLS">
+                        <option value="Recogida en almac&eacute;n">
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label for="pedTracking">Tracking Number</label>
+                    <input type="text" id="pedTracking" placeholder="N&uacute;mero de seguimiento">
                 </div>
             </div>
             <div class="modal-footer">
