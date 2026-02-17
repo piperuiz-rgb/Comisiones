@@ -1839,18 +1839,35 @@ function cargarTablaPedidos() {
         </select>
     </div>`;
 
+    const solicitudes = DB.getSolicitudesCredito();
+
     html += `<table><thead><tr>
         <th class="sortable" data-col="numero" onclick="ordenarTabla('pedidosTableBody','numero','text')">N&ordm; Pedido</th>
         <th class="sortable" data-col="cliente" onclick="ordenarTabla('pedidosTableBody','cliente','text')">Cliente</th>
         <th class="sortable" data-col="showroom" onclick="ordenarTabla('pedidosTableBody','showroom','text')">Showroom</th>
         <th class="sortable" data-col="fecha" onclick="ordenarTabla('pedidosTableBody','fecha','date')">Fecha</th>
         <th class="sortable" data-col="importe" onclick="ordenarTabla('pedidosTableBody','importe','number')">Importe</th>
+        <th>Cr&eacute;dito Hilldun</th>
         <th>Acciones</th>
     </tr></thead><tbody id="pedidosTableBody">`;
 
     pedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(pedido => {
         const cliente = clientes.find(c => c.id === pedido.clienteId);
         const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+
+        // Credit status
+        const solicitud = solicitudes.find(s => s.pedidoId === pedido.id);
+        let creditoHtml = '';
+        if (solicitud) {
+            const badges = { pendiente: 'warning', enviada: 'primary', aprobada: 'success', rechazada: 'danger' };
+            const badge = badges[solicitud.estado] || 'secondary';
+            creditoHtml = `<span class="badge badge-${badge}" style="cursor:pointer" onclick="modalSolicitudCredito('${solicitud.id}')" title="Click para ver/editar">${solicitud.estado}</span>`;
+            if (solicitud.estado === 'aprobada' && solicitud.limiteCredito) {
+                creditoHtml += `<br><small style="color:var(--success)">${formatCurrency(solicitud.limiteCredito, solicitud.moneda || pedido.moneda)}</small>`;
+            }
+        } else {
+            creditoHtml = `<button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="solicitarCreditoDesdePedido('${pedido.id}')">Solicitar</button>`;
+        }
 
         html += `
             <tr data-sort-key="1" data-sort-numero="${pedido.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${pedido.fecha}" data-sort-importe="${pedido.importe}" data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}">
@@ -1859,6 +1876,7 @@ function cargarTablaPedidos() {
                 <td>${showroom ? showroom.nombre : '-'}</td>
                 <td>${formatDate(pedido.fecha)}</td>
                 <td>${formatCurrency(pedido.importe, pedido.moneda)}</td>
+                <td style="text-align:center">${creditoHtml}</td>
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-icon" onclick="modalPedido('${pedido.id}')">Edit</button>
@@ -4948,6 +4966,127 @@ function exportarSolicitudesCredito() {
     const ws = XLSX.utils.aoa_to_sheet(data);
     XLSX.utils.book_append_sheet(wb, ws, 'Solicitudes Credito');
     XLSX.writeFile(wb, `Solicitudes_Credito_Hilldun_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+// ========================================
+// HILLDUN - SOLICITAR CREDITO DESDE PEDIDO
+// ========================================
+
+function solicitarCreditoDesdePedido(pedidoId) {
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+    const pedido = pedidos.find(p => p.id === pedidoId);
+    if (!pedido) return;
+
+    const cliente = clientes.find(c => c.id === pedido.clienteId);
+
+    // Check if config exists
+    const config = DB.getHilldunConfig();
+    const hasConfig = config.clientCodeEUR || config.clientCodeUSD;
+
+    // Check if client has address data
+    const hasAddress = cliente && cliente.address1 && cliente.phone;
+
+    // Warn if missing data
+    if (!hasConfig || !hasAddress) {
+        let warnings = [];
+        if (!hasConfig) warnings.push('- No hay Client Code de Hilldun configurado (pestana Hilldun > Configuracion)');
+        if (!hasAddress) warnings.push(`- El cliente "${cliente ? cliente.nombre : '?'}" no tiene datos de facturacion completos (editar cliente > Datos Facturacion)`);
+        if (!confirm('Faltan datos para enviar a Hilldun:\n\n' + warnings.join('\n') + '\n\nCrear la solicitud de todas formas?')) return;
+    }
+
+    // Create solicitud
+    const hoy = new Date().toISOString().split('T')[0];
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 30);
+    const fin = endDate.toISOString().split('T')[0];
+
+    const solicitudes = DB.getSolicitudesCredito();
+    const nuevaSolicitud = {
+        id: generarId(),
+        pedidoId: pedido.id,
+        clienteId: pedido.clienteId,
+        fecha: hoy,
+        estado: 'pendiente',
+        importePedido: pedido.importe,
+        moneda: pedido.moneda,
+        deliveryStartDate: hoy,
+        deliveryEndDate: fin,
+        poNumber: '',
+        referencia: '',
+        fechaRespuesta: '',
+        limiteCredito: 0,
+        condiciones: '',
+        notas: '',
+        fechaCreacion: new Date().toISOString()
+    };
+
+    solicitudes.push(nuevaSolicitud);
+    DB.setSolicitudesCredito(solicitudes);
+
+    // Ask if user wants to generate CSV now
+    if (hasConfig && hasAddress) {
+        if (confirm(`Solicitud creada para pedido ${pedido.numero}.\n\nGenerar y descargar el CSV para Hilldun ahora?`)) {
+            generarCSVCreditRequestsParaPedido(nuevaSolicitud.id);
+        }
+    }
+
+    cargarTablaPedidos();
+    showAlert('pedidosAlert', `Solicitud de credito creada para ${pedido.numero}`, 'success');
+}
+
+function generarCSVCreditRequestsParaPedido(solicitudId) {
+    const config = DB.getHilldunConfig();
+    const solicitudes = DB.getSolicitudesCredito();
+    const sol = solicitudes.find(s => s.id === solicitudId);
+    if (!sol) return;
+
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+    const pedido = pedidos.find(p => p.id === sol.pedidoId);
+    const cliente = clientes.find(c => c.id === sol.clienteId);
+    const moneda = sol.moneda || 'EUR';
+
+    const header = [
+        "Hilldun's Client Code", 'ClientOrderNumber', 'PO Number', 'PO Amount',
+        'PO Date', 'DeliveryStartDate', 'DeliveryEndDate', 'TermsCode',
+        'TermsDescription', 'NetDays', 'CustomerCode', 'CustomerName',
+        'BillToAddress1', 'BillToAddress2', 'BillToCity', 'BillToState',
+        'BillToZip', 'BillToCountry', 'BillToContact', 'BillToPhone',
+        'BillToEmailAddress', 'BillToRegistration', 'Count', 'Total',
+        'Currency', 'BatchID'
+    ];
+
+    const batchId = generarBatchId();
+    const row = [
+        getHilldunClientCode(moneda),
+        pedido ? pedido.numero : '', sol.poNumber || (pedido ? pedido.numero : ''),
+        Math.round(sol.importePedido || 0),
+        formatDateHilldun(pedido ? pedido.fecha : sol.fecha),
+        formatDateHilldun(sol.deliveryStartDate || sol.fecha),
+        formatDateHilldun(sol.deliveryEndDate || ''),
+        config.termsCode || '', config.termsDesc || '', config.netDays || 30,
+        cliente ? (cliente.customerCode || '') : '', cliente ? cliente.nombre : '',
+        cliente ? (cliente.address1 || '') : '', cliente ? (cliente.address2 || '') : '',
+        cliente ? (cliente.city || '') : '', cliente ? (cliente.state || '') : '',
+        cliente ? (cliente.zip || '') : '', cliente ? (cliente.country || '') : '',
+        cliente ? (cliente.contact || '') : '', cliente ? (cliente.phone || '') : '',
+        cliente ? (cliente.email || '') : '', cliente ? (cliente.vatRegistration || '') : '',
+        1, sol.importePedido || 0, moneda, batchId
+    ];
+
+    const csvLines = [header.map(escapeCsvField).join(','), row.map(escapeCsvField).join(',')];
+    const primaryCode = config.clientCodeEUR || config.clientCodeUSD || 'XXXX';
+    const filename = `${batchId}-${primaryCode}-CreditRequest-${pedido ? pedido.numero : 'NEW'}.csv`;
+    downloadCsv(filename, csvLines.join('\r\n'));
+
+    // Mark as enviada
+    const idx = solicitudes.findIndex(s => s.id === solicitudId);
+    if (idx !== -1) {
+        solicitudes[idx].estado = 'enviada';
+        solicitudes[idx].batchId = batchId;
+        DB.setSolicitudesCredito(solicitudes);
+    }
 }
 
 // ========================================
