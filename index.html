@@ -242,11 +242,88 @@
         </div>
         <!-- TAB: HILLDUN CRÉDITO -->
         <div id="tab-hilldun" class="tab-content">
+            <!-- Configuracion Hilldun -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">&#9881;</div>
+                        <div class="card-title">Configuracion Hilldun</div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="toggleConfigHilldun()">Mostrar/Ocultar</button>
+                </div>
+                <div id="hilldunConfigPanel" style="display:none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcClientCodeEUR">Client Code EUR</label>
+                            <input type="text" id="hcClientCodeEUR" placeholder="Ej: CHAR">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcClientCodeUSD">Client Code USD</label>
+                            <input type="text" id="hcClientCodeUSD" placeholder="Ej: UCHAR">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcTermsCode">Terms Code por defecto</label>
+                            <input type="text" id="hcTermsCode" placeholder="Ej: NET30">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcTermsDesc">Terms Description por defecto</label>
+                            <input type="text" id="hcTermsDesc" placeholder="Ej: NET 30">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcNetDays">Net Days por defecto</label>
+                            <input type="number" id="hcNetDays" value="30" min="0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcDefaultCarrier">Carrier/Transportista por defecto</label>
+                            <input type="text" id="hcDefaultCarrier" placeholder="Ej: DHL, UPS">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcEdiTradingPartner">EDI Trading Partner</label>
+                            <select id="hcEdiTradingPartner">
+                                <option value="0">0 - Enviar PDF por correo</option>
+                                <option value="1">1 - No enviar PDF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="guardarHilldunConfig()" style="margin-top: 8px;">Guardar Configuracion</button>
+                </div>
+            </div>
+
+            <!-- Acciones CSV Hilldun -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">&#128196;</div>
+                        <div class="card-title">Intercambio CSV con Hilldun</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="generarCSVCreditRequests()">
+                        <span>&#8595;</span>
+                        <span>Generar CSV Solicitudes Credito</span>
+                    </button>
+                    <button class="btn btn-primary" onclick="generarCSVInvoices()">
+                        <span>&#8595;</span>
+                        <span>Generar CSV Facturas</span>
+                    </button>
+                    <button class="btn btn-success" onclick="document.getElementById('importResponsesInput').click()">
+                        <span>&#8593;</span>
+                        <span>Importar CSV Respuestas Hilldun</span>
+                    </button>
+                    <input type="file" id="importResponsesInput" accept=".csv" style="display:none">
+                </div>
+            </div>
+
+            <!-- Solicitudes de Credito -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">🏦</div>
-                        <div class="card-title">Solicitudes de Crédito - Hilldun</div>
+                        <div class="card-icon">&#127974;</div>
+                        <div class="card-title">Solicitudes de Credito</div>
                     </div>
                     <div class="actions">
                         <button class="btn btn-success" onclick="modalSolicitudCredito()">
@@ -254,7 +331,7 @@
                             <span>Nueva Solicitud</span>
                         </button>
                         <button class="btn btn-secondary" onclick="exportarSolicitudesCredito()">
-                            <span>↓</span>
+                            <span>&#8595;</span>
                             <span>Exportar Excel</span>
                         </button>
                     </div>
@@ -321,6 +398,65 @@
                 <select id="cliShowroom" required>
                     <option value="">Seleccionar showroom...</option>
                 </select>
+            </div>
+            <div style="border-top: 1px solid #E2E8F0; margin-top: 16px; padding-top: 12px;">
+                <button type="button" class="btn btn-secondary" style="width:100%;margin-bottom:12px;font-size:13px;" onclick="toggleHilldunFields()">
+                    Datos Facturacion (Hilldun) &#9660;
+                </button>
+                <div id="hilldunClienteFields" style="display:none;">
+                    <div class="form-group">
+                        <label for="cliCustomerCode">Codigo Cliente</label>
+                        <input type="text" id="cliCustomerCode" placeholder="Codigo interno del cliente">
+                    </div>
+                    <div class="form-group">
+                        <label for="cliAddress1">Direccion Linea 1</label>
+                        <input type="text" id="cliAddress1">
+                    </div>
+                    <div class="form-group">
+                        <label for="cliAddress2">Direccion Linea 2</label>
+                        <input type="text" id="cliAddress2">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliCity">Ciudad</label>
+                            <input type="text" id="cliCity">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliState">Estado/Provincia</label>
+                            <input type="text" id="cliState">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliZip">Codigo Postal</label>
+                            <input type="text" id="cliZip">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliCountry">Pais</label>
+                            <input type="text" id="cliCountry" placeholder="Ej: US, ES, GB">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliContact">Contacto</label>
+                            <input type="text" id="cliContact">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliPhone">Telefono</label>
+                            <input type="text" id="cliPhone">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliEmail">Email</label>
+                            <input type="email" id="cliEmail">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliVat">VAT / Registro Fiscal</label>
+                            <input type="text" id="cliVat">
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalCliente')">Cancelar</button>
@@ -516,6 +652,20 @@
                         <option value="rechazada">Rechazada</option>
                     </select>
                 </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="solDeliveryStart">Fecha Inicio Envio</label>
+                    <input type="date" id="solDeliveryStart">
+                </div>
+                <div class="form-group">
+                    <label for="solDeliveryEnd">Fecha Fin Envio</label>
+                    <input type="date" id="solDeliveryEnd">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="solPONumber">Numero PO (si difiere del pedido)</label>
+                <input type="text" id="solPONumber" placeholder="Dejar vacio para usar numero de pedido">
             </div>
             <div id="camposRespuesta" style="display:none;">
                 <div class="form-row">

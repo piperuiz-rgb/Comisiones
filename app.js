@@ -32,7 +32,10 @@ const DB = {
     clearHistoricoInformes: () => DB.set('historicoInformes', []),
 
     getSolicitudesCredito: () => DB.getArray('solicitudesCredito'),
-    setSolicitudesCredito: (data) => DB.set('solicitudesCredito', data)
+    setSolicitudesCredito: (data) => DB.set('solicitudesCredito', data),
+
+    getHilldunConfig: () => DB.get('hilldunConfig'),
+    setHilldunConfig: (data) => DB.set('hilldunConfig', data)
 };
 
 // ========================================
@@ -379,6 +382,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.getElementById('importCobrosInput').addEventListener('change', (e) => {
         if (e.target.files.length > 0) importarCobros(e.target.files[0]);
+    });
+    document.getElementById('importResponsesInput').addEventListener('change', (e) => {
+        if (e.target.files.length > 0) importarCreditResponses(e.target.files[0]);
     });
 
     // Cargar dashboard inicial
@@ -1210,40 +1216,87 @@ function modalCliente(id = null) {
         title.textContent = 'Editar Cliente';
         document.getElementById('cliNombre').value = cliente.nombre;
         document.getElementById('cliShowroom').value = cliente.showroomId;
+        // Hilldun fields
+        document.getElementById('cliCustomerCode').value = cliente.customerCode || '';
+        document.getElementById('cliAddress1').value = cliente.address1 || '';
+        document.getElementById('cliAddress2').value = cliente.address2 || '';
+        document.getElementById('cliCity').value = cliente.city || '';
+        document.getElementById('cliState').value = cliente.state || '';
+        document.getElementById('cliZip').value = cliente.zip || '';
+        document.getElementById('cliCountry').value = cliente.country || '';
+        document.getElementById('cliContact').value = cliente.contact || '';
+        document.getElementById('cliPhone').value = cliente.phone || '';
+        document.getElementById('cliEmail').value = cliente.email || '';
+        document.getElementById('cliVat').value = cliente.vatRegistration || '';
+        // Show Hilldun fields if any are populated
+        const hasHilldunData = cliente.address1 || cliente.phone || cliente.email || cliente.city;
+        document.getElementById('hilldunClienteFields').style.display = hasHilldunData ? 'block' : 'none';
         editandoId = id;
     } else {
         title.textContent = 'Nuevo Cliente';
         document.getElementById('cliNombre').value = '';
         document.getElementById('cliShowroom').value = '';
+        document.getElementById('cliCustomerCode').value = '';
+        document.getElementById('cliAddress1').value = '';
+        document.getElementById('cliAddress2').value = '';
+        document.getElementById('cliCity').value = '';
+        document.getElementById('cliState').value = '';
+        document.getElementById('cliZip').value = '';
+        document.getElementById('cliCountry').value = '';
+        document.getElementById('cliContact').value = '';
+        document.getElementById('cliPhone').value = '';
+        document.getElementById('cliEmail').value = '';
+        document.getElementById('cliVat').value = '';
+        document.getElementById('hilldunClienteFields').style.display = 'none';
         editandoId = null;
     }
-    
+
     modal.classList.add('visible');
+}
+
+function toggleHilldunFields() {
+    const el = document.getElementById('hilldunClienteFields');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 function guardarCliente() {
     const nombre = document.getElementById('cliNombre').value.trim();
     const showroomId = document.getElementById('cliShowroom').value;
-    
+
     if (!nombre || !showroomId) {
         alert('Por favor completa todos los campos');
         return;
     }
-    
+
+    const hilldunData = {
+        customerCode: document.getElementById('cliCustomerCode').value.trim(),
+        address1: document.getElementById('cliAddress1').value.trim(),
+        address2: document.getElementById('cliAddress2').value.trim(),
+        city: document.getElementById('cliCity').value.trim(),
+        state: document.getElementById('cliState').value.trim(),
+        zip: document.getElementById('cliZip').value.trim(),
+        country: document.getElementById('cliCountry').value.trim(),
+        contact: document.getElementById('cliContact').value.trim(),
+        phone: document.getElementById('cliPhone').value.trim(),
+        email: document.getElementById('cliEmail').value.trim(),
+        vatRegistration: document.getElementById('cliVat').value.trim()
+    };
+
     const clientes = DB.getClientes();
-    
+
     if (editandoId) {
         const index = clientes.findIndex(c => c.id === editandoId);
-        clientes[index] = { ...clientes[index], nombre, showroomId };
+        clientes[index] = { ...clientes[index], nombre, showroomId, ...hilldunData };
     } else {
         clientes.push({
             id: generarId(),
             nombre,
             showroomId,
+            ...hilldunData,
             fechaCreacion: new Date().toISOString()
         });
     }
-    
+
     DB.setClientes(clientes);
     cerrarModal('modalCliente');
     cargarTablaClientes();
@@ -2823,6 +2876,9 @@ function modalSolicitudCredito(id = null) {
         document.getElementById('solPedido').value = sol.pedidoId;
         document.getElementById('solFecha').value = sol.fecha;
         document.getElementById('solEstado').value = sol.estado;
+        document.getElementById('solDeliveryStart').value = sol.deliveryStartDate || '';
+        document.getElementById('solDeliveryEnd').value = sol.deliveryEndDate || '';
+        document.getElementById('solPONumber').value = sol.poNumber || '';
         document.getElementById('solReferencia').value = sol.referencia || '';
         document.getElementById('solFechaRespuesta').value = sol.fechaRespuesta || '';
         document.getElementById('solLimiteCredito').value = sol.limiteCredito || '';
@@ -2836,6 +2892,11 @@ function modalSolicitudCredito(id = null) {
         document.getElementById('solPedido').value = '';
         document.getElementById('solFecha').valueAsDate = new Date();
         document.getElementById('solEstado').value = 'pendiente';
+        document.getElementById('solDeliveryStart').valueAsDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 30);
+        document.getElementById('solDeliveryEnd').valueAsDate = endDate;
+        document.getElementById('solPONumber').value = '';
         document.getElementById('solReferencia').value = '';
         document.getElementById('solFechaRespuesta').value = '';
         document.getElementById('solLimiteCredito').value = '';
@@ -2862,6 +2923,9 @@ function guardarSolicitudCredito() {
     const pedido = DB.getPedidos().find(p => p.id === pedidoId);
     const cliente = pedido ? DB.getClientes().find(c => c.id === pedido.clienteId) : null;
 
+    const deliveryStartDate = document.getElementById('solDeliveryStart').value;
+    const deliveryEndDate = document.getElementById('solDeliveryEnd').value;
+    const poNumber = document.getElementById('solPONumber').value.trim();
     const referencia = document.getElementById('solReferencia').value.trim();
     const fechaRespuesta = document.getElementById('solFechaRespuesta').value;
     const limiteCredito = parseFloat(document.getElementById('solLimiteCredito').value) || 0;
@@ -2880,6 +2944,9 @@ function guardarSolicitudCredito() {
             estado,
             importePedido: pedido ? pedido.importe : 0,
             moneda: pedido ? pedido.moneda : 'EUR',
+            deliveryStartDate,
+            deliveryEndDate,
+            poNumber,
             referencia,
             fechaRespuesta,
             limiteCredito,
@@ -2895,6 +2962,9 @@ function guardarSolicitudCredito() {
             estado,
             importePedido: pedido ? pedido.importe : 0,
             moneda: pedido ? pedido.moneda : 'EUR',
+            deliveryStartDate,
+            deliveryEndDate,
+            poNumber,
             referencia,
             fechaRespuesta,
             limiteCredito,
@@ -2971,6 +3041,498 @@ function exportarSolicitudesCredito() {
     XLSX.utils.book_append_sheet(wb, ws, 'Solicitudes Crédito');
 
     XLSX.writeFile(wb, `Solicitudes_Credito_Hilldun_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+// ========================================
+// HILLDUN - CONFIGURACION
+// ========================================
+
+function toggleConfigHilldun() {
+    const panel = document.getElementById('hilldunConfigPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    if (panel.style.display === 'block') cargarHilldunConfig();
+}
+
+function cargarHilldunConfig() {
+    const config = DB.getHilldunConfig();
+    document.getElementById('hcClientCodeEUR').value = config.clientCodeEUR || '';
+    document.getElementById('hcClientCodeUSD').value = config.clientCodeUSD || '';
+    document.getElementById('hcTermsCode').value = config.termsCode || '';
+    document.getElementById('hcTermsDesc').value = config.termsDesc || '';
+    document.getElementById('hcNetDays').value = config.netDays || 30;
+    document.getElementById('hcDefaultCarrier').value = config.defaultCarrier || '';
+    document.getElementById('hcEdiTradingPartner').value = config.ediTradingPartner || '0';
+}
+
+function guardarHilldunConfig() {
+    const config = {
+        clientCodeEUR: document.getElementById('hcClientCodeEUR').value.trim(),
+        clientCodeUSD: document.getElementById('hcClientCodeUSD').value.trim(),
+        termsCode: document.getElementById('hcTermsCode').value.trim(),
+        termsDesc: document.getElementById('hcTermsDesc').value.trim(),
+        netDays: parseInt(document.getElementById('hcNetDays').value) || 30,
+        defaultCarrier: document.getElementById('hcDefaultCarrier').value.trim(),
+        ediTradingPartner: document.getElementById('hcEdiTradingPartner').value
+    };
+    DB.setHilldunConfig(config);
+    showAlert('hilldunAlert', 'Configuracion Hilldun guardada correctamente', 'success');
+}
+
+// ========================================
+// HILLDUN - UTILIDADES CSV
+// ========================================
+
+function formatDateHilldun(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + 'T00:00:00');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+}
+
+function generarBatchId() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const h = String(now.getHours()).padStart(2, '0');
+    const mi = String(now.getMinutes()).padStart(2, '0');
+    const s = String(now.getSeconds()).padStart(2, '0');
+    return `${y}${mo}${d}${h}${mi}${s}`;
+}
+
+function getHilldunClientCode(moneda) {
+    const config = DB.getHilldunConfig();
+    if (moneda === 'USD') return config.clientCodeUSD || config.clientCodeEUR || '';
+    return config.clientCodeEUR || '';
+}
+
+function escapeCsvField(value) {
+    if (value == null) return '';
+    const str = String(value);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function downloadCsv(filename, csvContent) {
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+// ========================================
+// HILLDUN - GENERAR CSV CREDIT REQUESTS
+// ========================================
+
+function generarCSVCreditRequests() {
+    const config = DB.getHilldunConfig();
+    if (!config.clientCodeEUR && !config.clientCodeUSD) {
+        alert('Configura primero el Client Code de Hilldun en la seccion de Configuracion.');
+        return;
+    }
+
+    const solicitudes = DB.getSolicitudesCredito().filter(s => s.estado === 'pendiente' || s.estado === 'enviada');
+    if (solicitudes.length === 0) {
+        alert('No hay solicitudes pendientes o enviadas para generar el CSV.');
+        return;
+    }
+
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+
+    // Header row per Hilldun spec v3.02c
+    const header = [
+        "Hilldun's Client Code", 'ClientOrderNumber', 'PO Number', 'PO Amount',
+        'PO Date', 'DeliveryStartDate', 'DeliveryEndDate', 'TermsCode',
+        'TermsDescription', 'NetDays', 'CustomerCode', 'CustomerName',
+        'BillToAddress1', 'BillToAddress2', 'BillToCity', 'BillToState',
+        'BillToZip', 'BillToCountry', 'BillToContact', 'BillToPhone',
+        'BillToEmailAddress', 'BillToRegistration', 'Count', 'Total',
+        'Currency', 'BatchID'
+    ];
+
+    const batchId = generarBatchId();
+    const totalAmount = solicitudes.reduce((sum, s) => sum + (s.importePedido || 0), 0);
+    const count = solicitudes.length;
+    const warnings = [];
+
+    const rows = solicitudes.map(sol => {
+        const pedido = pedidos.find(p => p.id === sol.pedidoId);
+        const cliente = clientes.find(c => c.id === sol.clienteId);
+        const moneda = sol.moneda || (pedido ? pedido.moneda : 'EUR');
+        const clientCode = getHilldunClientCode(moneda);
+
+        if (cliente && !cliente.phone) {
+            warnings.push(`Cliente "${cliente.nombre}" sin telefono - las solicitudes pueden ser rechazadas.`);
+        }
+        if (cliente && !cliente.address1) {
+            warnings.push(`Cliente "${cliente.nombre}" sin direccion de facturacion.`);
+        }
+
+        const poNum = sol.poNumber || (pedido ? pedido.numero : '');
+        const poAmount = Math.round(sol.importePedido || (pedido ? pedido.importe : 0));
+        const poDate = formatDateHilldun(pedido ? pedido.fecha : sol.fecha);
+        const deliveryStart = formatDateHilldun(sol.deliveryStartDate || sol.fecha);
+        const deliveryEnd = formatDateHilldun(sol.deliveryEndDate || '');
+
+        return [
+            clientCode,
+            pedido ? pedido.numero : '',
+            poNum,
+            poAmount,
+            poDate,
+            deliveryStart,
+            deliveryEnd,
+            config.termsCode || '',
+            config.termsDesc || '',
+            config.netDays || 30,
+            cliente ? (cliente.customerCode || '') : '',
+            cliente ? cliente.nombre : '',
+            cliente ? (cliente.address1 || '') : '',
+            cliente ? (cliente.address2 || '') : '',
+            cliente ? (cliente.city || '') : '',
+            cliente ? (cliente.state || '') : '',
+            cliente ? (cliente.zip || '') : '',
+            cliente ? (cliente.country || '') : '',
+            cliente ? (cliente.contact || '') : '',
+            cliente ? (cliente.phone || '') : '',
+            cliente ? (cliente.email || '') : '',
+            cliente ? (cliente.vatRegistration || '') : '',
+            count,
+            totalAmount,
+            moneda,
+            batchId
+        ];
+    });
+
+    // Show warnings
+    const uniqueWarnings = [...new Set(warnings)];
+    if (uniqueWarnings.length > 0) {
+        const proceed = confirm(
+            'Advertencias:\n\n' + uniqueWarnings.join('\n') +
+            '\n\n¿Deseas continuar con la generacion del CSV?'
+        );
+        if (!proceed) return;
+    }
+
+    // Build CSV
+    const csvLines = [header.map(escapeCsvField).join(',')];
+    rows.forEach(row => csvLines.push(row.map(escapeCsvField).join(',')));
+    const csvContent = csvLines.join('\r\n');
+
+    // Determine filename
+    const primaryCode = config.clientCodeEUR || config.clientCodeUSD || 'XXXX';
+    const filename = `${batchId}-${primaryCode}-CreditRequests.csv`;
+
+    downloadCsv(filename, csvContent);
+
+    // Mark solicitudes as enviada
+    const allSolicitudes = DB.getSolicitudesCredito();
+    solicitudes.forEach(sol => {
+        const idx = allSolicitudes.findIndex(s => s.id === sol.id);
+        if (idx !== -1 && allSolicitudes[idx].estado === 'pendiente') {
+            allSolicitudes[idx].estado = 'enviada';
+            allSolicitudes[idx].batchId = batchId;
+        }
+    });
+    DB.setSolicitudesCredito(allSolicitudes);
+    cargarTablaHilldun();
+    showAlert('hilldunAlert', `CSV generado: ${filename} (${count} solicitudes)`, 'success');
+}
+
+// ========================================
+// HILLDUN - GENERAR CSV INVOICES
+// ========================================
+
+function generarCSVInvoices() {
+    const config = DB.getHilldunConfig();
+    if (!config.clientCodeEUR && !config.clientCodeUSD) {
+        alert('Configura primero el Client Code de Hilldun en la seccion de Configuracion.');
+        return;
+    }
+
+    const facturas = DB.getFacturas();
+    if (facturas.length === 0) {
+        alert('No hay facturas para generar el CSV.');
+        return;
+    }
+
+    const pedidos = DB.getPedidos();
+    const clientes = DB.getClientes();
+
+    // Header per Hilldun spec v3.02c (columns A-EE)
+    const header = [
+        "Hilldun's Client Code", 'Client Order Number', 'PO Number',
+        'InvoiceNumber', 'InvoiceAmount', 'InvoiceBalance', 'InvoiceDate',
+        'TermsCode', 'TermsDescription', 'CustomerCode', 'CustomerName',
+        'BillToAddress1', 'BillToAddress2', 'BillToCity', 'BillToState',
+        'BillToZip', 'BillToCountry', 'BillToContact', 'BillToPhone',
+        'Carrier', 'Tracking', 'EdiTradingPartner',
+        'InvoiceCount', 'InvoiceTotal', 'CreditMemo', 'OriginalInvoiceNumber',
+        'CreditMemoCount', 'CreditMemoTotal', 'Currency', 'BatchID', 'Invoice_URL'
+    ];
+
+    const batchId = generarBatchId();
+
+    // Separate regular invoices and credit memos (negative amounts)
+    const regularInvoices = facturas.filter(f => f.importe >= 0);
+    const creditMemos = facturas.filter(f => f.importe < 0);
+
+    const invoiceCount = regularInvoices.length;
+    const invoiceTotal = regularInvoices.reduce((sum, f) => sum + f.importe, 0);
+    const creditMemoCount = creditMemos.length;
+    const creditMemoTotal = creditMemos.reduce((sum, f) => sum + Math.abs(f.importe), 0);
+
+    const rows = facturas.map(fac => {
+        const cliente = clientes.find(c => c.id === fac.clienteId);
+        const moneda = fac.moneda || 'EUR';
+        const clientCode = getHilldunClientCode(moneda);
+        const estado = calcularEstadoFactura(fac.id);
+        const isCreditMemo = fac.importe < 0;
+
+        // Find related order number
+        let orderNumber = '';
+        if (fac.pedidosOrigen) {
+            const firstPedidoNum = fac.pedidosOrigen.split(',')[0].trim();
+            const pedido = pedidos.find(p => p.numero === firstPedidoNum);
+            orderNumber = pedido ? pedido.numero : firstPedidoNum;
+        }
+
+        return [
+            clientCode,
+            orderNumber,
+            orderNumber,
+            fac.numero,
+            Math.abs(fac.importe),
+            Math.max(0, estado.pendiente),
+            formatDateHilldun(fac.fecha),
+            config.termsCode || '',
+            config.termsDesc || '',
+            cliente ? (cliente.customerCode || '') : '',
+            cliente ? cliente.nombre : '',
+            cliente ? (cliente.address1 || '') : '',
+            cliente ? (cliente.address2 || '') : '',
+            cliente ? (cliente.city || '') : '',
+            cliente ? (cliente.state || '') : '',
+            cliente ? (cliente.zip || '') : '',
+            cliente ? (cliente.country || '') : '',
+            cliente ? (cliente.contact || '') : '',
+            cliente ? (cliente.phone || '') : '',
+            config.defaultCarrier || '',
+            '',
+            config.ediTradingPartner || '0',
+            invoiceCount,
+            invoiceTotal,
+            isCreditMemo ? 1 : 0,
+            '',
+            creditMemoCount > 0 ? creditMemoCount : '',
+            creditMemoTotal > 0 ? creditMemoTotal : '',
+            moneda,
+            batchId,
+            ''
+        ];
+    });
+
+    // Build CSV
+    const csvLines = [header.map(escapeCsvField).join(',')];
+    rows.forEach(row => csvLines.push(row.map(escapeCsvField).join(',')));
+    const csvContent = csvLines.join('\r\n');
+
+    const primaryCode = config.clientCodeEUR || config.clientCodeUSD || 'XXXX';
+    const filename = `${batchId}-${primaryCode}-Invoices.csv`;
+
+    downloadCsv(filename, csvContent);
+    showAlert('hilldunAlert', `CSV generado: ${filename} (${facturas.length} facturas)`, 'success');
+}
+
+// ========================================
+// HILLDUN - IMPORTAR CREDIT RESPONSES
+// ========================================
+
+function importarCreditResponses(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const text = e.target.result;
+            const lines = text.split(/\r?\n/).filter(line => line.trim());
+
+            if (lines.length < 2) {
+                showAlert('hilldunAlert', 'El archivo CSV esta vacio o no tiene datos.', 'error');
+                return;
+            }
+
+            // Detect if first line is header
+            const firstLine = lines[0].toLowerCase();
+            const hasHeader = firstLine.includes('timestamp') || firstLine.includes('client code') ||
+                              firstLine.includes('approval') || firstLine.includes('action');
+            const startRow = hasHeader ? 1 : 0;
+
+            const solicitudes = DB.getSolicitudesCredito();
+            const pedidos = DB.getPedidos();
+            let actualizadas = 0;
+            let noEncontradas = 0;
+            const resultados = [];
+
+            for (let i = startRow; i < lines.length; i++) {
+                const fields = parseCSVLine(lines[i]);
+                if (fields.length < 17) continue;
+
+                // Columns per Hilldun spec:
+                // A=TimeStamp, B=ClientCode, C=ApprovalCode, D=ClientOrderNumber
+                // E=ClientCustomerCode, F=DebtorCode, G=DebtorName
+                // H=RequestedAmount, I=ApprovedAmount, J=PostDate
+                // K=StartDate, L=EndDate, M=ExpirationDate
+                // N=TermsNetDays, O=ActionCode, P=ReasonCodes, Q=HilldunDecision
+                // R-V=Reasons1-5, W=Count, X=Total
+
+                const approvalCode = fields[2] ? fields[2].trim() : '';
+                const clientOrderNumber = fields[3] ? fields[3].trim() : '';
+                const debtorName = fields[6] ? fields[6].trim() : '';
+                const requestedAmount = parseFloat(fields[7]) || 0;
+                const approvedAmount = parseFloat(fields[8]) || 0;
+                const postDate = fields[9] ? fields[9].trim() : '';
+                const expirationDate = fields[12] ? fields[12].trim() : '';
+                const termsNetDays = fields[13] ? fields[13].trim() : '';
+                const actionCode = fields[14] ? fields[14].trim() : '';
+                const reasonCodes = fields[15] ? fields[15].trim() : '';
+                const hilldunDecision = fields[16] ? fields[16].trim() : '';
+                const reasons = [];
+                for (let r = 17; r <= 21 && r < fields.length; r++) {
+                    if (fields[r] && fields[r].trim()) reasons.push(fields[r].trim());
+                }
+
+                // Find matching solicitud by order number
+                const pedido = pedidos.find(p => p.numero === clientOrderNumber);
+                let solicitud = null;
+                if (pedido) {
+                    solicitud = solicitudes.find(s => s.pedidoId === pedido.id &&
+                        (s.estado === 'pendiente' || s.estado === 'enviada'));
+                }
+
+                if (!solicitud && pedido) {
+                    // Try any solicitud for this pedido
+                    solicitud = solicitudes.find(s => s.pedidoId === pedido.id);
+                }
+
+                if (solicitud) {
+                    // Map action code to estado
+                    let nuevoEstado = 'pendiente';
+                    switch (actionCode.toUpperCase()) {
+                        case 'AC': nuevoEstado = 'aprobada'; break;
+                        case 'DR': nuevoEstado = 'rechazada'; break;
+                        case 'CI': nuevoEstado = 'rechazada'; break;
+                        case 'HC': nuevoEstado = 'enviada'; break;
+                        case 'SP': nuevoEstado = 'rechazada'; break;
+                        default: nuevoEstado = actionCode ? 'enviada' : 'pendiente'; break;
+                    }
+
+                    const idx = solicitudes.findIndex(s => s.id === solicitud.id);
+                    solicitudes[idx] = {
+                        ...solicitudes[idx],
+                        estado: nuevoEstado,
+                        referencia: approvalCode,
+                        limiteCredito: approvedAmount,
+                        fechaRespuesta: postDate ? convertHilldunDate(postDate) : new Date().toISOString().split('T')[0],
+                        hilldunDecision: hilldunDecision,
+                        actionCode: actionCode,
+                        reasonCodes: reasonCodes,
+                        condiciones: [
+                            hilldunDecision,
+                            reasons.length > 0 ? 'Razones: ' + reasons.join(', ') : '',
+                            termsNetDays ? 'Net Days: ' + termsNetDays : '',
+                            expirationDate ? 'Expira: ' + expirationDate : ''
+                        ].filter(Boolean).join(' | ')
+                    };
+                    actualizadas++;
+                    resultados.push(`OK: ${clientOrderNumber} -> ${hilldunDecision || actionCode}`);
+                } else {
+                    noEncontradas++;
+                    resultados.push(`No encontrada: ${clientOrderNumber} (${debtorName})`);
+                }
+            }
+
+            DB.setSolicitudesCredito(solicitudes);
+            cargarTablaHilldun();
+
+            let mensaje = `Importacion completada: ${actualizadas} solicitudes actualizadas`;
+            if (noEncontradas > 0) {
+                mensaje += `, ${noEncontradas} no encontradas`;
+            }
+            showAlert('hilldunAlert', mensaje, actualizadas > 0 ? 'success' : 'error');
+
+            if (noEncontradas > 0) {
+                console.log('Resultados importacion Hilldun:', resultados);
+            }
+        } catch (error) {
+            showAlert('hilldunAlert', 'Error al importar respuestas: ' + error.message, 'error');
+        }
+    };
+    reader.readAsText(file);
+    document.getElementById('importResponsesInput').value = '';
+}
+
+function parseCSVLine(line) {
+    const fields = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (inQuotes) {
+            if (char === '"') {
+                if (i + 1 < line.length && line[i + 1] === '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = false;
+                }
+            } else {
+                current += char;
+            }
+        } else {
+            if (char === '"') {
+                inQuotes = true;
+            } else if (char === ',') {
+                fields.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+    }
+    fields.push(current);
+    return fields;
+}
+
+function convertHilldunDate(dateStr) {
+    if (!dateStr) return '';
+    // Try MM/DD/YYYY or MM-DD-YYYY format
+    const match = dateStr.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (match) {
+        return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`;
+    }
+    // Try YYMMDDHHMMSS format (Hilldun timestamp)
+    if (/^\d{12,14}$/.test(dateStr)) {
+        let yy, mm, dd;
+        if (dateStr.length === 12) {
+            yy = dateStr.substring(0, 2);
+            mm = dateStr.substring(2, 4);
+            dd = dateStr.substring(4, 6);
+        } else {
+            yy = dateStr.substring(0, 4);
+            mm = dateStr.substring(4, 6);
+            dd = dateStr.substring(6, 8);
+        }
+        const year = yy.length === 2 ? '20' + yy : yy;
+        return `${year}-${mm}-${dd}`;
+    }
+    return dateStr;
 }
 
 
