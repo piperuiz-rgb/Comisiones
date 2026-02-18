@@ -166,7 +166,7 @@ const DB = {
         else if (tabId === 'vistaGlobal') cargarVistaGlobal();
         else if (tabId === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
         else if (tabId === 'historico') cargarHistoricoInformes();
-        else if (tabId === 'hilldun') cargarTablaHilldun();
+        else if (tabId === 'hilldun') { cargarTablaHilldun(); cargarPanelPDFHilldun(); }
     },
 
     get: (key) => JSON.parse(JSON.stringify(DB._cache[key] || {})),
@@ -399,7 +399,7 @@ function switchTab(tabName) {
     if (tabName === 'vistaGlobal') cargarVistaGlobal();
     if (tabName === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
     if (tabName === 'historico') cargarHistoricoInformes();
-    if (tabName === 'hilldun') cargarTablaHilldun();
+    if (tabName === 'hilldun') { cargarTablaHilldun(); cargarPanelPDFHilldun(); }
 }
 
 function calcularTotalAbonos(factura, todasFacturas) {
@@ -5960,6 +5960,172 @@ function importarCreditResponses(file) {
     };
     reader.readAsText(file);
     document.getElementById('importResponsesInput').value = '';
+}
+
+// ========================================
+// HILLDUN - PDFs PARA FTP
+// ========================================
+
+let _pdfHilldunFiltro = 'pendientes'; // 'pendientes' | 'enviados' | 'todos'
+let _pdfHilldunData = [];
+
+function cargarPanelPDFHilldun() {
+    const facturas = DB.getFacturas();
+    const clientes = DB.getClientes();
+    const config = DB.getHilldunConfig() || {};
+
+    // Solo facturas regulares (no abonos, importe positivo)
+    const facturasHilldun = facturas
+        .filter(f => !f.esAbono && (f.importe || 0) > 0)
+        .map(f => {
+            const cliente = clientes.find(c => c.id === f.clienteId);
+            return { ...f, _clienteNombre: cliente ? cliente.nombre : '—' };
+        })
+        .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    _pdfHilldunData = facturasHilldun;
+
+    const driveFolderUrl = config.driveFolderUrl || '';
+    const total = facturasHilldun.length;
+    const enviados = facturasHilldun.filter(f => f.hilldunPdfEnviado).length;
+    const pendientes = total - enviados;
+
+    const panel = document.getElementById('hilldunPDFPanel');
+    if (!panel) return;
+
+    panel.innerHTML = `
+        <div style="padding:16px">
+            <div class="stats-grid" style="margin-bottom:16px">
+                <div class="stat-card"><div class="stat-label">Pendientes PDF</div><div class="stat-value" style="color:var(--warning)">${pendientes}</div></div>
+                <div class="stat-card"><div class="stat-label">Enviados FTP</div><div class="stat-value" style="color:var(--success)">${enviados}</div></div>
+                <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value">${total}</div></div>
+            </div>
+            <div class="filter-bar" style="margin-bottom:12px">
+                <select id="pdfHilldunFiltro" onchange="filtrarPDFHilldun()">
+                    <option value="pendientes" ${_pdfHilldunFiltro === 'pendientes' ? 'selected' : ''}>Pendientes de PDF</option>
+                    <option value="enviados" ${_pdfHilldunFiltro === 'enviados' ? 'selected' : ''}>Enviados al FTP</option>
+                    <option value="todos" ${_pdfHilldunFiltro === 'todos' ? 'selected' : ''}>Todos</option>
+                </select>
+                <input type="text" id="pdfHilldunBuscar" placeholder="Buscar factura o cliente..." oninput="filtrarPDFHilldun()">
+            </div>
+            <div id="pdfHilldunTabla"></div>
+            <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                <button class="btn btn-primary" onclick="marcarPDFsEnviadosFTP()">&#10003; Marcar seleccionados como Enviados al FTP</button>
+                <small style="color:var(--text-secondary)">Nombre del fichero en FTP: <code>/PDFs/{numero_factura}.pdf</code></small>
+            </div>
+        </div>
+    `;
+
+    renderPDFHilldunTable(driveFolderUrl);
+}
+
+function renderPDFHilldunTable(driveFolderUrl) {
+    const busqueda = (document.getElementById('pdfHilldunBuscar')?.value || '').toLowerCase();
+
+    let lista = _pdfHilldunData.filter(f => {
+        if (_pdfHilldunFiltro === 'pendientes' && f.hilldunPdfEnviado) return false;
+        if (_pdfHilldunFiltro === 'enviados' && !f.hilldunPdfEnviado) return false;
+        if (busqueda) {
+            const texto = [f.numero, f._clienteNombre].join(' ').toLowerCase();
+            if (!texto.includes(busqueda)) return false;
+        }
+        return true;
+    });
+
+    const container = document.getElementById('pdfHilldunTabla');
+    if (!container) return;
+
+    if (lista.length === 0) {
+        container.innerHTML = '<div class="empty-state"><p>No hay facturas que coincidan con el filtro.</p></div>';
+        return;
+    }
+
+    let html = `<table>
+        <thead><tr>
+            <th style="width:36px"><input type="checkbox" title="Seleccionar todos" onchange="toggleSeleccionarTodosPDF(this.checked)"></th>
+            <th>Factura</th>
+            <th>Cliente</th>
+            <th>Importe</th>
+            <th>F. Envío</th>
+            <th>PDF en Drive</th>
+            <th>Estado FTP</th>
+            <th>Acciones</th>
+        </tr></thead>
+        <tbody>`;
+
+    lista.forEach(f => {
+        const enviado = !!f.hilldunPdfEnviado;
+        const estadoBadge = enviado
+            ? `<span class="badge badge-success">&#10003; Enviado FTP</span>${f.fechaPdfEnviado ? `<br><small style="color:var(--text-secondary)">${formatDate(f.fechaPdfEnviado)}</small>` : ''}`
+            : `<span class="badge badge-warning">Pendiente</span>`;
+        const driveLink = driveFolderUrl
+            ? `<a href="https://drive.google.com/drive/search?q=${encodeURIComponent(f.numero)}" target="_blank" title="Buscar PDF en Drive" class="btn btn-secondary btn-icon" style="font-size:14px">&#128269;</a>`
+            : '&mdash;';
+        const revertirBtn = enviado
+            ? `<button class="btn btn-secondary btn-icon" onclick="revertirPDFFTP('${f.id}')" title="Revertir a Pendiente">&#8635;</button>`
+            : '';
+
+        html += `<tr data-id="${f.id}">
+            <td><input type="checkbox" class="pdf-check" value="${f.id}" ${enviado ? 'disabled' : ''}></td>
+            <td><strong>${f.numero}</strong></td>
+            <td>${f._clienteNombre}</td>
+            <td>${formatCurrency(f.importe, f.moneda)}</td>
+            <td>${formatDate(f.fechaEnvio || f.fecha)}</td>
+            <td style="text-align:center">${driveLink}</td>
+            <td>${estadoBadge}</td>
+            <td>${revertirBtn}</td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function filtrarPDFHilldun() {
+    _pdfHilldunFiltro = document.getElementById('pdfHilldunFiltro')?.value || 'pendientes';
+    const config = DB.getHilldunConfig() || {};
+    renderPDFHilldunTable(config.driveFolderUrl || '');
+}
+
+function toggleSeleccionarTodosPDF(checked) {
+    document.querySelectorAll('.pdf-check:not(:disabled)').forEach(cb => cb.checked = checked);
+}
+
+function marcarPDFsEnviadosFTP() {
+    const seleccionados = [...document.querySelectorAll('.pdf-check:checked')].map(cb => cb.value);
+    if (seleccionados.length === 0) {
+        alert('Selecciona al menos una factura.');
+        return;
+    }
+    const hoy = new Date().toISOString().split('T')[0];
+    const facturas = DB.getFacturas();
+    let actualizadas = 0;
+
+    seleccionados.forEach(id => {
+        const idx = facturas.findIndex(f => f.id === id);
+        if (idx >= 0) {
+            facturas[idx] = { ...facturas[idx], hilldunPdfEnviado: true, fechaPdfEnviado: hoy };
+            actualizadas++;
+        }
+    });
+
+    if (actualizadas > 0) {
+        DB.setFacturas(facturas);
+        showAlert('hilldunAlert', `${actualizadas} factura(s) marcada(s) como enviadas al FTP.`, 'success');
+        cargarPanelPDFHilldun();
+    }
+}
+
+function revertirPDFFTP(facturaId) {
+    if (!confirm('¿Revertir esta factura a estado Pendiente?')) return;
+    const facturas = DB.getFacturas();
+    const idx = facturas.findIndex(f => f.id === facturaId);
+    if (idx >= 0) {
+        facturas[idx] = { ...facturas[idx], hilldunPdfEnviado: false, fechaPdfEnviado: '' };
+        DB.setFacturas(facturas);
+        showAlert('hilldunAlert', 'Factura revertida a Pendiente.', 'success');
+        cargarPanelPDFHilldun();
+    }
 }
 
 // ========================================
