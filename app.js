@@ -4551,7 +4551,7 @@ function cargarVistaGlobal() {
                 deliveryEnd = pedSolicitud.deliveryEndDate || '';
             }
         }
-        if (deliveryEnd && estado !== 'cobrada') {
+        if (deliveryEnd) {
             const hoy = new Date();
             const endDate = new Date(deliveryEnd + 'T00:00:00');
             const diasRestantes = Math.ceil((endDate - hoy) / (1000 * 60 * 60 * 24));
