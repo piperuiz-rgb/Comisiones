@@ -4463,6 +4463,7 @@ function cargarVistaGlobal() {
     const cobros = DB.getCobros();
     const clientes = DB.getClientes();
     const showrooms = DB.getShowrooms();
+    const pedidos = DB.getPedidos();
 
     // Populate showroom filter
     const selectShow = document.getElementById('filtroShowroomVG');
@@ -4479,6 +4480,10 @@ function cargarVistaGlobal() {
             cobrosPorFactura[c.facturaId].push(c);
         }
     });
+
+    // Index pedidos by numero for transport lookup
+    const pedidosPorNumero = {};
+    pedidos.forEach(p => { pedidosPorNumero[p.numero.trim()] = p; });
 
     // Build row data
     const rows = facturas.map(factura => {
@@ -4499,11 +4504,24 @@ function cargarVistaGlobal() {
             ? redondear2(importeAbs * (showroom.comision || 0) / 100)
             : null;
 
-        const pedidosNums = factura.pedidos
-            ? factura.pedidos.split(',').map(p => p.trim()).filter(Boolean)
-            : [];
+        // Ref. origen: pedidos for invoices, facturas abonadas for credit notes
+        const refNums = factura.esAbono
+            ? (factura.facturasAbonadas ? factura.facturasAbonadas.split(',').map(s => s.trim()).filter(Boolean) : [])
+            : (factura.pedidos ? factura.pedidos.split(',').map(p => p.trim()).filter(Boolean) : []);
 
-        return { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, pedidosNums };
+        // Transport info from linked pedidos (only for regular invoices)
+        let metodoEnvio = '';
+        let trackingNumber = '';
+        if (!factura.esAbono && factura.pedidos) {
+            const pedNums = factura.pedidos.split(',').map(p => p.trim()).filter(Boolean);
+            const pedConEnvio = pedNums.map(n => pedidosPorNumero[n]).filter(Boolean).find(p => p.metodoEnvio || p.trackingNumber);
+            if (pedConEnvio) {
+                metodoEnvio = pedConEnvio.metodoEnvio || '';
+                trackingNumber = pedConEnvio.trackingNumber || '';
+            }
+        }
+
+        return { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, refNums, metodoEnvio, trackingNumber };
     });
 
     // Stats (only regular invoices)
@@ -4552,7 +4570,9 @@ function renderizarTablaVistaGlobal(rows) {
         <th>Tipo</th>
         <th>Cliente</th>
         <th>Showroom</th>
-        <th>Pedido(s)</th>
+        <th>Ref. Origen</th>
+        <th>Transportista</th>
+        <th>Tracking</th>
         <th>Emisi&oacute;n</th>
         <th>Vencimiento</th>
         <th style="text-align:right">Importe</th>
@@ -4563,7 +4583,7 @@ function renderizarTablaVistaGlobal(rows) {
     </tr></thead><tbody id="vistaGlobalTableBody">`;
 
     sorted.forEach(row => {
-        const { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, pedidosNums } = row;
+        const { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, refNums, metodoEnvio, trackingNumber } = row;
 
         const estadoColor = estado === 'cobrada' ? 'var(--success)' : estado === 'parcial' ? 'var(--warning)' : 'var(--danger)';
         const estadoTexto = estado === 'cobrada' ? '&#10003; Cobrada' : estado === 'parcial' ? `${pct}% cobrada` : 'Pendiente';
@@ -4584,7 +4604,12 @@ function renderizarTablaVistaGlobal(rows) {
         const hasDetalle = factCobros.length > 0;
         const clienteNombre = cliente ? cliente.nombre : '';
         const showroomId = showroom ? showroom.id : '';
-        const buscar = `${factura.numero} ${clienteNombre} ${showroom ? showroom.nombre : ''} ${pedidosNums.join(' ')}`.toLowerCase();
+        const buscar = `${factura.numero} ${clienteNombre} ${showroom ? showroom.nombre : ''} ${refNums.join(' ')} ${metodoEnvio} ${trackingNumber}`.toLowerCase();
+
+        // Ref. origen label depends on type
+        const refLabel = factura.esAbono
+            ? `<span style="color:var(--warning);font-size:11px">Abona: </span>${refNums.join(', ')}`
+            : refNums.join(', ');
 
         html += `<tr class="vg-main-row"
             data-estado="${estado}"
@@ -4596,7 +4621,9 @@ function renderizarTablaVistaGlobal(rows) {
             <td><span style="${tipoColor};font-size:12px">${tipoTexto}</span></td>
             <td>${clienteNombre || '&mdash;'}</td>
             <td>${showroom ? showroom.nombre : '&mdash;'}</td>
-            <td style="font-size:12px;color:var(--gray-600)">${pedidosNums.length ? pedidosNums.join(', ') : '&mdash;'}</td>
+            <td style="font-size:12px;color:var(--gray-600)">${refNums.length ? refLabel : '&mdash;'}</td>
+            <td style="font-size:12px">${metodoEnvio || '&mdash;'}</td>
+            <td style="font-size:12px"><code style="font-size:11px">${trackingNumber || '&mdash;'}</code></td>
             <td>${formatDate(factura.fecha)}</td>
             <td>${formatDate(factura.fechaVencimiento)}</td>
             <td style="text-align:right">${formatCurrency(factura.importe, factura.moneda)}</td>
@@ -4608,7 +4635,7 @@ function renderizarTablaVistaGlobal(rows) {
 
         if (hasDetalle) {
             html += `<tr id="vg-row-${factura.id}-detalle" style="display:none;background:var(--bg-dark)">
-                <td colspan="12" style="padding:0">
+                <td colspan="14" style="padding:0">
                     <div style="padding:10px 32px">
                         <table style="width:100%;font-size:13px">
                             <thead><tr style="border-bottom:1px solid var(--border)">
