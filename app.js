@@ -163,6 +163,7 @@ const DB = {
         else if (tabId === 'pedidos') cargarTablaPedidos();
         else if (tabId === 'facturas') cargarTablaFacturas();
         else if (tabId === 'cobros') cargarTablaCobros();
+        else if (tabId === 'vistaGlobal') cargarVistaGlobal();
         else if (tabId === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
         else if (tabId === 'historico') cargarHistoricoInformes();
         else if (tabId === 'hilldun') cargarTablaHilldun();
@@ -395,6 +396,7 @@ function switchTab(tabName) {
     if (tabName === 'pedidos') cargarTablaPedidos();
     if (tabName === 'facturas') cargarTablaFacturas();
     if (tabName === 'cobros') cargarTablaCobros();
+    if (tabName === 'vistaGlobal') cargarVistaGlobal();
     if (tabName === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
     if (tabName === 'historico') cargarHistoricoInformes();
     if (tabName === 'hilldun') cargarTablaHilldun();
@@ -4450,6 +4452,209 @@ function cargarAgingReport() {
     });
     html += '</tbody></table>';
     container.innerHTML = html;
+}
+
+// ========================================
+// VISTA GLOBAL (FACTURA-CÉNTRICA)
+// ========================================
+
+function cargarVistaGlobal() {
+    const facturas = DB.getFacturas();
+    const cobros = DB.getCobros();
+    const clientes = DB.getClientes();
+    const showrooms = DB.getShowrooms();
+
+    // Populate showroom filter
+    const selectShow = document.getElementById('filtroShowroomVG');
+    const currentVal = selectShow.value;
+    selectShow.innerHTML = '<option value="">Todos los showrooms</option>';
+    showrooms.forEach(s => { selectShow.innerHTML += `<option value="${s.id}">${s.nombre}</option>`; });
+    if (currentVal) selectShow.value = currentVal;
+
+    // Index cobros by factura
+    const cobrosPorFactura = {};
+    cobros.forEach(c => {
+        if (c.facturaId) {
+            if (!cobrosPorFactura[c.facturaId]) cobrosPorFactura[c.facturaId] = [];
+            cobrosPorFactura[c.facturaId].push(c);
+        }
+    });
+
+    // Build row data
+    const rows = facturas.map(factura => {
+        const cliente = clientes.find(c => c.id === factura.clienteId);
+        const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
+        const factCobros = (cobrosPorFactura[factura.id] || []).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+        const importeAbs = Math.abs(factura.importe || 0);
+        const totalCobrado = factCobros.reduce((sum, c) => sum + (c.importe || 0), 0);
+        const pendiente = Math.max(0, importeAbs - totalCobrado);
+        const pct = importeAbs > 0 ? Math.min(100, Math.round((totalCobrado / importeAbs) * 100)) : 0;
+
+        let estado;
+        if (totalCobrado >= importeAbs - 0.01) estado = 'cobrada';
+        else if (totalCobrado > 0.01) estado = 'parcial';
+        else estado = 'pendiente';
+
+        const comision = (estado === 'cobrada' && showroom && !factura.esAbono)
+            ? redondear2(importeAbs * (showroom.comision || 0) / 100)
+            : null;
+
+        const pedidosNums = factura.pedidos
+            ? factura.pedidos.split(',').map(p => p.trim()).filter(Boolean)
+            : [];
+
+        return { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, pedidosNums };
+    });
+
+    // Stats (only regular invoices)
+    const factNormales = rows.filter(r => !r.factura.esAbono);
+    const cobradas = factNormales.filter(r => r.estado === 'cobrada').length;
+    const parciales = factNormales.filter(r => r.estado === 'parcial').length;
+    const pendientes = factNormales.filter(r => r.estado === 'pendiente').length;
+
+    const comEUR = factNormales.filter(r => r.comision !== null && r.factura.moneda === 'EUR').reduce((s, r) => s + r.comision, 0);
+    const comUSD = factNormales.filter(r => r.comision !== null && r.factura.moneda === 'USD').reduce((s, r) => s + r.comision, 0);
+    let comTexto = '';
+    if (comEUR > 0) comTexto += formatCurrency(comEUR, 'EUR');
+    if (comEUR > 0 && comUSD > 0) comTexto += ' / ';
+    if (comUSD > 0) comTexto += formatCurrency(comUSD, 'USD');
+    if (!comTexto) comTexto = '—';
+
+    document.getElementById('vistaGlobalStats').innerHTML = `
+        <div class="stat-card"><div class="stat-label">Facturas</div><div class="stat-value">${factNormales.length}</div></div>
+        <div class="stat-card" style="border-left:3px solid var(--success)"><div class="stat-label">Cobradas 100%</div><div class="stat-value" style="color:var(--success)">${cobradas}</div></div>
+        <div class="stat-card" style="border-left:3px solid var(--warning)"><div class="stat-label">Cobro parcial</div><div class="stat-value" style="color:var(--warning)">${parciales}</div></div>
+        <div class="stat-card" style="border-left:3px solid var(--danger)"><div class="stat-label">Sin cobrar</div><div class="stat-value" style="color:var(--danger)">${pendientes}</div></div>
+        <div class="stat-card" style="border-left:3px solid var(--primary)"><div class="stat-label">Comisiones generadas</div><div class="stat-value" style="color:var(--primary);font-size:18px">${comTexto}</div></div>
+    `;
+
+    window._vistaGlobalRows = rows;
+    renderizarTablaVistaGlobal(rows);
+}
+
+function renderizarTablaVistaGlobal(rows) {
+    const container = document.getElementById('vistaGlobalTable');
+
+    if (rows.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">VG</div><p>No hay facturas registradas</p></div>';
+        return;
+    }
+
+    const ordenEstado = { pendiente: 0, parcial: 1, cobrada: 2 };
+    const sorted = [...rows].sort((a, b) => {
+        const diff = ordenEstado[a.estado] - ordenEstado[b.estado];
+        if (diff !== 0) return diff;
+        return new Date(a.factura.fechaVencimiento || '9999') - new Date(b.factura.fechaVencimiento || '9999');
+    });
+
+    let html = `<table><thead><tr>
+        <th>Factura</th>
+        <th>Tipo</th>
+        <th>Cliente</th>
+        <th>Showroom</th>
+        <th>Pedido(s)</th>
+        <th>Emisi&oacute;n</th>
+        <th>Vencimiento</th>
+        <th style="text-align:right">Importe</th>
+        <th style="text-align:right">Cobrado</th>
+        <th style="text-align:right">Pendiente</th>
+        <th>Estado</th>
+        <th style="text-align:right">Comisi&oacute;n</th>
+    </tr></thead><tbody id="vistaGlobalTableBody">`;
+
+    sorted.forEach(row => {
+        const { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, pedidosNums } = row;
+
+        const estadoColor = estado === 'cobrada' ? 'var(--success)' : estado === 'parcial' ? 'var(--warning)' : 'var(--danger)';
+        const estadoTexto = estado === 'cobrada' ? '&#10003; Cobrada' : estado === 'parcial' ? `${pct}% cobrada` : 'Pendiente';
+        const tipoTexto = factura.esAbono ? 'Abono' : 'Factura';
+        const tipoColor = factura.esAbono ? 'color:var(--warning)' : '';
+
+        const progressBar = `<div style="display:flex;align-items:center;gap:6px">
+            <div style="flex:1;height:6px;background:var(--bg-dark);border-radius:3px;min-width:60px">
+                <div style="width:${pct}%;height:100%;background:${estadoColor};border-radius:3px"></div>
+            </div>
+            <span style="color:${estadoColor};font-size:12px;white-space:nowrap;font-weight:500">${estadoTexto}</span>
+        </div>`;
+
+        const comisionTexto = comision !== null
+            ? `<span style="color:var(--success);font-weight:600">${formatCurrency(comision, factura.moneda)}</span>`
+            : factura.esAbono ? '&mdash;' : `<span style="color:var(--gray-400);font-size:12px">Pdte.</span>`;
+
+        const hasDetalle = factCobros.length > 0;
+        const clienteNombre = cliente ? cliente.nombre : '';
+        const showroomId = showroom ? showroom.id : '';
+        const buscar = `${factura.numero} ${clienteNombre} ${showroom ? showroom.nombre : ''} ${pedidosNums.join(' ')}`.toLowerCase();
+
+        html += `<tr class="vg-main-row"
+            data-estado="${estado}"
+            data-showroom="${showroomId}"
+            data-buscar="${buscar}"
+            style="cursor:${hasDetalle ? 'pointer' : 'default'}"
+            ${hasDetalle ? `onclick="toggleVistaGlobalDetalle('${factura.id}')"` : ''}>
+            <td><strong>${factura.numero}</strong>${hasDetalle ? ' <span style="color:var(--gray-400);font-size:10px">&#9660;</span>' : ''}</td>
+            <td><span style="${tipoColor};font-size:12px">${tipoTexto}</span></td>
+            <td>${clienteNombre || '&mdash;'}</td>
+            <td>${showroom ? showroom.nombre : '&mdash;'}</td>
+            <td style="font-size:12px;color:var(--gray-600)">${pedidosNums.length ? pedidosNums.join(', ') : '&mdash;'}</td>
+            <td>${formatDate(factura.fecha)}</td>
+            <td>${formatDate(factura.fechaVencimiento)}</td>
+            <td style="text-align:right">${formatCurrency(factura.importe, factura.moneda)}</td>
+            <td style="text-align:right;color:var(--success)">${totalCobrado > 0.01 ? formatCurrency(totalCobrado, factura.moneda) : '&mdash;'}</td>
+            <td style="text-align:right;color:${pendiente > 0.01 ? 'var(--danger)' : 'var(--success)'}">${pendiente > 0.01 ? formatCurrency(pendiente, factura.moneda) : '&mdash;'}</td>
+            <td>${progressBar}</td>
+            <td style="text-align:right">${comisionTexto}</td>
+        </tr>`;
+
+        if (hasDetalle) {
+            html += `<tr id="vg-row-${factura.id}-detalle" style="display:none;background:var(--bg-dark)">
+                <td colspan="12" style="padding:0">
+                    <div style="padding:10px 32px">
+                        <table style="width:100%;font-size:13px">
+                            <thead><tr style="border-bottom:1px solid var(--border)">
+                                <th style="padding:4px 8px;font-weight:500;color:var(--gray-600)">Fecha cobro</th>
+                                <th style="padding:4px 8px;font-weight:500;color:var(--gray-600);text-align:right">Importe</th>
+                                <th style="padding:4px 8px;font-weight:500;color:var(--gray-600)">Notas</th>
+                            </tr></thead>
+                            <tbody>
+                                ${factCobros.map(c => `<tr>
+                                    <td style="padding:4px 8px">${formatDate(c.fecha)}</td>
+                                    <td style="padding:4px 8px;text-align:right;color:var(--success)">${formatCurrency(c.importe, c.moneda)}</td>
+                                    <td style="padding:4px 8px;color:var(--gray-600)">${c.notas || '&mdash;'}</td>
+                                </tr>`).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </td>
+            </tr>`;
+        }
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+function toggleVistaGlobalDetalle(facturaId) {
+    const detalle = document.getElementById(`vg-row-${facturaId}-detalle`);
+    if (!detalle) return;
+    detalle.style.display = detalle.style.display === 'none' ? '' : 'none';
+}
+
+function filtrarVistaGlobal() {
+    const q = document.getElementById('buscarVistaGlobal').value.toLowerCase();
+    const showFiltro = document.getElementById('filtroShowroomVG').value;
+    const estadoFiltro = document.getElementById('filtroEstadoVG').value;
+
+    document.querySelectorAll('#vistaGlobalTableBody .vg-main-row').forEach(row => {
+        const visible = (!q || (row.getAttribute('data-buscar') || '').includes(q)) &&
+                        (!showFiltro || row.getAttribute('data-showroom') === showFiltro) &&
+                        (!estadoFiltro || row.getAttribute('data-estado') === estadoFiltro);
+        row.style.display = visible ? '' : 'none';
+        const detalle = row.nextElementSibling;
+        if (detalle && detalle.id && detalle.id.includes('-detalle') && !visible) {
+            detalle.style.display = 'none';
+        }
+    });
 }
 
 // ========================================

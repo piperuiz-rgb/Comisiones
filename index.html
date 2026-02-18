@@ -38,6 +38,7 @@
             <button class="nav-tab" onclick="switchTab('pedidos')">Pedidos</button>
             <button class="nav-tab" onclick="switchTab('facturas')">Facturas</button>
             <button class="nav-tab" onclick="switchTab('cobros')">Cobros</button>
+            <button class="nav-tab" onclick="switchTab('vistaGlobal')">Vista Global</button>
             <button class="nav-tab" onclick="switchTab('informes')">Comisiones</button>
             <button class="nav-tab" onclick="switchTab('historico')">Hist&oacute;rico</button>
             <button class="nav-tab" onclick="switchTab('hilldun')">Hilldun Cr&eacute;dito</button>
@@ -177,6 +178,32 @@
                 <input type="file" id="importCobrosInput" accept=".xlsx,.csv" style="display:none">
                 <div class="alert alert-info" id="cobrosAlert"></div>
                 <div class="table-container" id="cobrosTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: VISTA GLOBAL -->
+        <div id="tab-vistaGlobal" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">VG</div>
+                        <div class="card-title">Vista Global &mdash; Seguimiento de Cobros y Comisiones</div>
+                    </div>
+                </div>
+                <div class="stats-grid" id="vistaGlobalStats"></div>
+                <div style="display: flex; gap: 16px; margin: 16px 0; flex-wrap: wrap;">
+                    <input type="text" id="buscarVistaGlobal" placeholder="Buscar factura, pedido, cliente..." style="flex: 1; min-width: 200px;" oninput="filtrarVistaGlobal()">
+                    <select id="filtroShowroomVG" style="min-width: 200px;" onchange="filtrarVistaGlobal()">
+                        <option value="">Todos los showrooms</option>
+                    </select>
+                    <select id="filtroEstadoVG" style="min-width: 180px;" onchange="filtrarVistaGlobal()">
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Sin cobrar</option>
+                        <option value="parcial">Cobro parcial</option>
+                        <option value="cobrada">Cobrada al 100%</option>
+                    </select>
+                </div>
+                <div class="table-container" id="vistaGlobalTable"></div>
             </div>
         </div>
 
