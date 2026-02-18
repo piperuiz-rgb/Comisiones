@@ -2247,10 +2247,10 @@ function modalFactura(id = null) {
         title.textContent = factura.esAbono ? 'Editar Abono' : 'Editar Factura';
         document.getElementById('facNumero').value = factura.numero;
         document.getElementById('facCliente').value = factura.clienteId;
-        document.getElementById('facPedidos').value = factura.pedidos || '';
+        document.getElementById('facPedidos').value = factura.pedidos || factura.pedidosOrigen || '';
         document.getElementById('facFacturasAbonadas').value = factura.facturasAbonadas || '';
         document.getElementById('facFecha').value = factura.fecha;
-        document.getElementById('facVencimiento').value = factura.vencimiento;
+        document.getElementById('facVencimiento').value = factura.vencimiento || factura.fechaVencimiento || '';
         document.getElementById('facMoneda').value = factura.moneda;
         document.getElementById('facImporte').value = factura.esAbono ? Math.abs(factura.importe) : factura.importe;
         document.getElementById('facNotas').value = factura.notas || '';
@@ -2259,8 +2259,9 @@ function modalFactura(id = null) {
         cargarFacturasAbonables();
         // Pre-cargar envío desde el primer pedido referenciado que tenga datos
         const pedidosDB = DB.getPedidos();
-        const refs = (factura.pedidos || '').split(',').map(s => s.trim()).filter(Boolean);
-        const pedidoConEnvio = refs.map(n => pedidosDB.find(p => p.numero === n)).filter(Boolean).find(p => p.metodoEnvio || p.trackingNumber);
+        const pedidosRefStr = factura.pedidos || factura.pedidosOrigen || '';
+        const refs = pedidosRefStr.split(',').map(s => s.trim()).filter(Boolean);
+        const pedidoConEnvio = refs.map(n => pedidosDB.find(p => p.numero.trim() === n)).filter(Boolean).find(p => p.metodoEnvio || p.trackingNumber);
         document.getElementById('facMetodoEnvio').value = pedidoConEnvio ? (pedidoConEnvio.metodoEnvio || '') : '';
         document.getElementById('facTracking').value = pedidoConEnvio ? (pedidoConEnvio.trackingNumber || '') : '';
         editandoId = id;
@@ -2456,7 +2457,7 @@ function guardarFactura() {
         const pedidoRefs = pedidosStr.split(',').map(s => s.trim().toLowerCase());
         let envioActualizado = false;
         pedidoRefs.forEach(ref => {
-            const idx = pedidosDB2.findIndex(p => p.numero.toLowerCase() === ref);
+            const idx = pedidosDB2.findIndex(p => p.numero.trim().toLowerCase() === ref);
             if (idx !== -1) {
                 pedidosDB2[idx] = { ...pedidosDB2[idx], metodoEnvio, trackingNumber };
                 envioActualizado = true;
