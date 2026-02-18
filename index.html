@@ -354,6 +354,11 @@
                             </select>
                         </div>
                     </div>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label for="hcDriveFolderUrl">Carpeta Google Drive (PDFs de facturas)</label>
+                        <input type="text" id="hcDriveFolderUrl" placeholder="https://drive.google.com/drive/folders/...">
+                        <small style="color:var(--gray-500);font-size:13px">Sube los PDFs con el n&uacute;mero de factura como nombre (ej: <code>FAC-001.pdf</code>). La app generar&aacute; links de b&uacute;squeda autom&aacute;ticamente en Vista Global.</small>
+                    </div>
                     <button class="btn btn-primary" onclick="guardarHilldunConfig()" style="margin-top: 8px;">Guardar Configuracion</button>
                 </div>
             </div>
@@ -661,27 +666,34 @@
                 <input type="hidden" id="facPedidos">
                 <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">Selecciona un cliente para ver sus pedidos</small>
             </div>
-            <div class="form-row" id="facEnvioGroup">
+            <div id="facEnvioGroup">
                 <div class="form-group">
-                    <label for="facMetodoEnvio">M&eacute;todo de Env&iacute;o</label>
-                    <input type="text" id="facMetodoEnvio" list="metodoEnvioListFac" placeholder="Ej: DHL Express">
-                    <datalist id="metodoEnvioListFac">
-                        <option value="DHL Express">
-                        <option value="FedEx">
-                        <option value="FedEx International Priority">
-                        <option value="UPS">
-                        <option value="UPS Express">
-                        <option value="TNT">
-                        <option value="SEUR">
-                        <option value="MRW">
-                        <option value="Correos Express">
-                        <option value="GLS">
-                        <option value="Recogida en almac&eacute;n">
-                    </datalist>
+                    <label for="facFechaEnvio">Fecha de Env&iacute;o</label>
+                    <input type="date" id="facFechaEnvio" oninput="this.dataset.synced='0'">
+                    <small style="color:var(--gray-500);font-size:13px">Por defecto coincide con la emisi&oacute;n. Edita si el env&iacute;o es posterior (Hilldun usa esta fecha para el vencimiento).</small>
                 </div>
-                <div class="form-group">
-                    <label for="facTracking">Tracking Number</label>
-                    <input type="text" id="facTracking" placeholder="N&uacute;mero de seguimiento">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="facMetodoEnvio">M&eacute;todo de Env&iacute;o</label>
+                        <input type="text" id="facMetodoEnvio" list="metodoEnvioListFac" placeholder="Ej: DHL Express">
+                        <datalist id="metodoEnvioListFac">
+                            <option value="DHL Express">
+                            <option value="FedEx">
+                            <option value="FedEx International Priority">
+                            <option value="UPS">
+                            <option value="UPS Express">
+                            <option value="TNT">
+                            <option value="SEUR">
+                            <option value="MRW">
+                            <option value="Correos Express">
+                            <option value="GLS">
+                            <option value="Recogida en almac&eacute;n">
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label for="facTracking">Tracking Number</label>
+                        <input type="text" id="facTracking" placeholder="N&uacute;mero de seguimiento">
+                    </div>
                 </div>
             </div>
             <div class="form-group" id="facAbonoGroup" style="display:none;">
@@ -693,7 +705,7 @@
             <div class="form-row">
                 <div class="form-group">
                     <label for="facFecha">Fecha Emisi&oacute;n *</label>
-                    <input type="date" id="facFecha" required>
+                    <input type="date" id="facFecha" required oninput="const fe=document.getElementById('facFechaEnvio');if(!fe.value||fe.dataset.synced!=='0'){fe.value=this.value;fe.dataset.synced='1';}">
                 </div>
                 <div class="form-group">
                     <label for="facVencimiento">Fecha Vencimiento *</label>

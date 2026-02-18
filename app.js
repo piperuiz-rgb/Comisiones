@@ -2261,6 +2261,9 @@ function modalFactura(id = null) {
         const pedidoConEnvio = refs.map(n => pedidosDB.find(p => p.numero.trim() === n)).filter(Boolean).find(p => p.metodoEnvio || p.trackingNumber);
         document.getElementById('facMetodoEnvio').value = pedidoConEnvio ? (pedidoConEnvio.metodoEnvio || '') : '';
         document.getElementById('facTracking').value = pedidoConEnvio ? (pedidoConEnvio.trackingNumber || '') : '';
+        const fEnvio = document.getElementById('facFechaEnvio');
+        fEnvio.value = factura.fechaEnvio || factura.fecha || '';
+        fEnvio.dataset.synced = '0'; // valor propio, no sincronizar con facFecha
         editandoId = id;
     } else {
         title.textContent = 'Nueva Factura';
@@ -2277,6 +2280,9 @@ function modalFactura(id = null) {
         document.getElementById('facNotas').value = '';
         document.getElementById('facMetodoEnvio').value = '';
         document.getElementById('facTracking').value = '';
+        const fEnvioNew = document.getElementById('facFechaEnvio');
+        fEnvioNew.value = new Date().toISOString().split('T')[0];
+        fEnvioNew.dataset.synced = '1'; // sincronizado con facFecha
         cambiarTipoFactura('factura');
         document.getElementById('pedidosCheckboxes').innerHTML = '';
         document.getElementById('pedidosDisponiblesInfo').textContent = 'Selecciona un cliente para ver sus pedidos';
@@ -2372,6 +2378,7 @@ function guardarFactura() {
     const notas = document.getElementById('facNotas').value.trim();
     const metodoEnvio = document.getElementById('facMetodoEnvio').value.trim();
     const trackingNumber = document.getElementById('facTracking').value.trim();
+    const fechaEnvio = document.getElementById('facFechaEnvio').value || fecha;
     const esAbono = tipoFacturaModal === 'abono';
 
     if (!numero || !clienteId || !fecha || !vencimiento || isNaN(importe)) {
@@ -2402,7 +2409,7 @@ function guardarFactura() {
     if (editandoId) {
         facturaId = editandoId;
         const index = facturas.findIndex(f => f.id === editandoId);
-        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, facturasAbonadas: facturasAbonadasStr, fecha, vencimiento, moneda, importe, esAbono, notas };
+        facturas[index] = { ...facturas[index], numero, clienteId, pedidos: pedidosStr, facturasAbonadas: facturasAbonadasStr, fecha, vencimiento, fechaEnvio, moneda, importe, esAbono, notas };
     } else {
         facturaId = generarId();
         facturas.push({
@@ -2410,7 +2417,7 @@ function guardarFactura() {
             numero, clienteId,
             pedidos: pedidosStr,
             facturasAbonadas: facturasAbonadasStr,
-            fecha, vencimiento, moneda, importe,
+            fecha, vencimiento, fechaEnvio, moneda, importe,
             esAbono, notas,
             fechaCreacion: new Date().toISOString()
         });
@@ -4485,6 +4492,14 @@ function cargarVistaGlobal() {
     const pedidosPorNumero = {};
     pedidos.forEach(p => { pedidosPorNumero[p.numero.trim()] = p; });
 
+    // Index solicitudes de crédito by pedidoId for delivery window
+    const solicitudes = DB.getSolicitudesCredito();
+    const solicitudesPorPedido = {};
+    solicitudes.forEach(s => { if (s.pedidoId) solicitudesPorPedido[s.pedidoId] = s; });
+
+    // Drive folder URL from Hilldun config
+    const driveFolderUrl = (DB.getHilldunConfig().driveFolderUrl || '').trim();
+
     // Build row data
     const rows = facturas.map(factura => {
         const cliente = clientes.find(c => c.id === factura.clienteId);
@@ -4521,7 +4536,29 @@ function cargarVistaGlobal() {
             }
         }
 
-        return { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, refNums, metodoEnvio, trackingNumber };
+        // Find delivery window from linked solicitud de crédito
+        let deliveryStart = '', deliveryEnd = '', deliveryAlerta = false;
+        if (!factura.esAbono && factura.pedidos) {
+            const pedNums = factura.pedidos.split(',').map(p => p.trim()).filter(Boolean);
+            const pedSolicitud = pedNums
+                .map(n => pedidosPorNumero[n])
+                .filter(Boolean)
+                .map(p => solicitudesPorPedido[p.id])
+                .filter(Boolean)
+                .find(s => s.deliveryEndDate || s.deliveryStartDate);
+            if (pedSolicitud) {
+                deliveryStart = pedSolicitud.deliveryStartDate || '';
+                deliveryEnd = pedSolicitud.deliveryEndDate || '';
+            }
+        }
+        if (deliveryEnd && estado !== 'cobrada') {
+            const hoy = new Date();
+            const endDate = new Date(deliveryEnd + 'T00:00:00');
+            const diasRestantes = Math.ceil((endDate - hoy) / (1000 * 60 * 60 * 24));
+            deliveryAlerta = diasRestantes >= 0 && diasRestantes <= 5;
+        }
+
+        return { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, refNums, metodoEnvio, trackingNumber, deliveryStart, deliveryEnd, deliveryAlerta };
     });
 
     // Stats (only regular invoices)
@@ -4547,10 +4584,11 @@ function cargarVistaGlobal() {
     `;
 
     window._vistaGlobalRows = rows;
-    renderizarTablaVistaGlobal(rows);
+    window._driveFolderUrl = driveFolderUrl;
+    renderizarTablaVistaGlobal(rows, driveFolderUrl);
 }
 
-function renderizarTablaVistaGlobal(rows) {
+function renderizarTablaVistaGlobal(rows, driveFolderUrl = '') {
     const container = document.getElementById('vistaGlobalTable');
 
     if (rows.length === 0) {
@@ -4573,17 +4611,19 @@ function renderizarTablaVistaGlobal(rows) {
         <th>Ref. Origen</th>
         <th>Transportista</th>
         <th>Tracking</th>
-        <th>Emisi&oacute;n</th>
+        <th>F. Env&iacute;o</th>
+        <th>Delivery Window</th>
         <th>Vencimiento</th>
         <th style="text-align:right">Importe</th>
         <th style="text-align:right">Cobrado</th>
         <th style="text-align:right">Pendiente</th>
         <th>Estado</th>
         <th style="text-align:right">Comisi&oacute;n</th>
+        <th>PDF</th>
     </tr></thead><tbody id="vistaGlobalTableBody">`;
 
     sorted.forEach(row => {
-        const { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, refNums, metodoEnvio, trackingNumber } = row;
+        const { factura, cliente, showroom, factCobros, totalCobrado, importeAbs, pendiente, pct, estado, comision, refNums, metodoEnvio, trackingNumber, deliveryStart, deliveryEnd, deliveryAlerta } = row;
 
         const estadoColor = estado === 'cobrada' ? 'var(--success)' : estado === 'parcial' ? 'var(--warning)' : 'var(--danger)';
         const estadoTexto = estado === 'cobrada' ? '&#10003; Cobrada' : estado === 'parcial' ? `${pct}% cobrada` : 'Pendiente';
@@ -4606,16 +4646,29 @@ function renderizarTablaVistaGlobal(rows) {
         const showroomId = showroom ? showroom.id : '';
         const buscar = `${factura.numero} ${clienteNombre} ${showroom ? showroom.nombre : ''} ${refNums.join(' ')} ${metodoEnvio} ${trackingNumber}`.toLowerCase();
 
-        // Ref. origen label depends on type
         const refLabel = factura.esAbono
             ? `<span style="color:var(--warning);font-size:11px">Abona: </span>${refNums.join(', ')}`
             : refNums.join(', ');
+
+        // Delivery window cell
+        let deliveryCell = '&mdash;';
+        if (deliveryStart || deliveryEnd) {
+            const alertIcon = deliveryAlerta ? ' <span style="color:var(--danger);font-weight:700" title="Deadline en 5 d&iacute;as o menos">&#9888;</span>' : '';
+            deliveryCell = `<span style="font-size:12px;${deliveryAlerta ? 'color:var(--danger);font-weight:600' : ''}">${formatDate(deliveryStart)} &ndash; ${formatDate(deliveryEnd)}${alertIcon}</span>`;
+        }
+
+        // PDF Drive link
+        const pdfCell = driveFolderUrl
+            ? `<a href="https://drive.google.com/drive/search?q=${encodeURIComponent(factura.numero)}" target="_blank" style="font-size:12px;white-space:nowrap" title="Buscar ${factura.numero}.pdf en Drive">&#128269; PDF</a>`
+            : '&mdash;';
+
+        const rowStyle = `cursor:${hasDetalle ? 'pointer' : 'default'};${deliveryAlerta ? 'background:rgba(239,68,68,0.05)' : ''}`;
 
         html += `<tr class="vg-main-row"
             data-estado="${estado}"
             data-showroom="${showroomId}"
             data-buscar="${buscar}"
-            style="cursor:${hasDetalle ? 'pointer' : 'default'}"
+            style="${rowStyle}"
             ${hasDetalle ? `onclick="toggleVistaGlobalDetalle('${factura.id}')"` : ''}>
             <td><strong>${factura.numero}</strong>${hasDetalle ? ' <span style="color:var(--gray-400);font-size:10px">&#9660;</span>' : ''}</td>
             <td><span style="${tipoColor};font-size:12px">${tipoTexto}</span></td>
@@ -4624,18 +4677,20 @@ function renderizarTablaVistaGlobal(rows) {
             <td style="font-size:12px;color:var(--gray-600)">${refNums.length ? refLabel : '&mdash;'}</td>
             <td style="font-size:12px">${metodoEnvio || '&mdash;'}</td>
             <td style="font-size:12px"><code style="font-size:11px">${trackingNumber || '&mdash;'}</code></td>
-            <td>${formatDate(factura.fecha)}</td>
-            <td>${formatDate(factura.fechaVencimiento)}</td>
+            <td>${formatDate(factura.fechaEnvio || factura.fecha)}</td>
+            <td>${deliveryCell}</td>
+            <td>${formatDate(factura.vencimiento || factura.fechaVencimiento)}</td>
             <td style="text-align:right">${formatCurrency(factura.importe, factura.moneda)}</td>
             <td style="text-align:right;color:var(--success)">${totalCobrado > 0.01 ? formatCurrency(totalCobrado, factura.moneda) : '&mdash;'}</td>
             <td style="text-align:right;color:${pendiente > 0.01 ? 'var(--danger)' : 'var(--success)'}">${pendiente > 0.01 ? formatCurrency(pendiente, factura.moneda) : '&mdash;'}</td>
             <td>${progressBar}</td>
             <td style="text-align:right">${comisionTexto}</td>
+            <td>${pdfCell}</td>
         </tr>`;
 
         if (hasDetalle) {
             html += `<tr id="vg-row-${factura.id}-detalle" style="display:none;background:var(--bg-dark)">
-                <td colspan="14" style="padding:0">
+                <td colspan="16" style="padding:0">
                     <div style="padding:10px 32px">
                         <table style="width:100%;font-size:13px">
                             <thead><tr style="border-bottom:1px solid var(--border)">
@@ -5005,14 +5060,17 @@ function cargarKPIs() {
 function cargarAlertasVencimiento() {
     const facturas = DB.getFacturas().filter(f => !f.esAbono);
     const clientes = DB.getClientes();
+    const pedidos = DB.getPedidos();
+    const solicitudes = DB.getSolicitudesCredito();
     const hoy = new Date();
     const en7dias = new Date(hoy.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const en5dias = new Date(hoy.getTime() + 5 * 24 * 60 * 60 * 1000);
 
+    // Facturas próximas a vencer
     const proximasVencer = [];
     facturas.forEach(f => {
         const estado = calcularEstadoFactura(f.id);
         if (estado.porcentaje >= 100) return;
-
         const venc = new Date(f.vencimiento || f.fechaVencimiento);
         if (venc >= hoy && venc <= en7dias) {
             const cliente = clientes.find(c => c.id === f.clienteId);
@@ -5026,21 +5084,54 @@ function cargarAlertasVencimiento() {
         }
     });
 
+    // Delivery windows próximos a vencer (5 días)
+    const deliveryProximos = [];
+    solicitudes.forEach(s => {
+        if (!s.deliveryEndDate) return;
+        const endDate = new Date(s.deliveryEndDate + 'T00:00:00');
+        if (endDate >= hoy && endDate <= en5dias) {
+            const pedido = pedidos.find(p => p.id === s.pedidoId);
+            const cliente = pedido ? clientes.find(c => c.id === pedido.clienteId) : null;
+            const diasRestantes = Math.ceil((endDate - hoy) / (1000 * 60 * 60 * 24));
+            deliveryProximos.push({
+                pedido: pedido ? pedido.numero : '?',
+                cliente: cliente ? cliente.nombre : '-',
+                fin: formatDate(s.deliveryEndDate),
+                dias: diasRestantes
+            });
+        }
+    });
+
     const container = document.getElementById('alertasVencimiento');
     if (!container) return;
 
-    if (proximasVencer.length === 0) {
+    if (proximasVencer.length === 0 && deliveryProximos.length === 0) {
         container.style.display = 'none';
         return;
     }
 
-    let html = `<div class="alert alert-warning visible" style="display: block; margin-bottom: 20px;">
-        <strong>Facturas por vencer en los pr&oacute;ximos 7 d&iacute;as (${proximasVencer.length}):</strong>
-        <ul style="margin: 8px 0 0 20px; list-style: disc;">`;
-    proximasVencer.forEach(f => {
-        html += `<li>${f.numero} - ${f.cliente} - ${f.importe} (${f.dias === 0 ? 'HOY' : f.dias === 1 ? 'manana' : f.dias + ' dias'})</li>`;
-    });
-    html += '</ul></div>';
+    let html = '';
+
+    if (deliveryProximos.length > 0) {
+        html += `<div class="alert alert-warning visible" style="display:block;margin-bottom:12px;border-left:4px solid var(--danger)">
+            <strong>&#9888; Delivery window pr&oacute;ximo a vencer (${deliveryProximos.length} pedido${deliveryProximos.length > 1 ? 's' : ''}):</strong>
+            <ul style="margin:8px 0 0 20px;list-style:disc;">`;
+        deliveryProximos.forEach(d => {
+            html += `<li>Pedido <strong>${d.pedido}</strong> &mdash; ${d.cliente} &mdash; fin: ${d.fin} (${d.dias === 0 ? '<strong>HOY</strong>' : d.dias === 1 ? 'ma&ntilde;ana' : d.dias + ' d&iacute;as'})</li>`;
+        });
+        html += '</ul></div>';
+    }
+
+    if (proximasVencer.length > 0) {
+        html += `<div class="alert alert-warning visible" style="display:block;margin-bottom:20px;">
+            <strong>Facturas por vencer en los pr&oacute;ximos 7 d&iacute;as (${proximasVencer.length}):</strong>
+            <ul style="margin:8px 0 0 20px;list-style:disc;">`;
+        proximasVencer.forEach(f => {
+            html += `<li>${f.numero} &mdash; ${f.cliente} &mdash; ${f.importe} (${f.dias === 0 ? 'HOY' : f.dias === 1 ? 'manana' : f.dias + ' dias'})</li>`;
+        });
+        html += '</ul></div>';
+    }
+
     container.innerHTML = html;
     container.style.display = 'block';
 }
@@ -5531,6 +5622,7 @@ function cargarHilldunConfig() {
     document.getElementById('hcNetDays').value = config.netDays || 30;
     document.getElementById('hcDefaultCarrier').value = config.defaultCarrier || '';
     document.getElementById('hcEdiTradingPartner').value = config.ediTradingPartner || '0';
+    document.getElementById('hcDriveFolderUrl').value = config.driveFolderUrl || '';
 }
 
 function guardarHilldunConfig() {
@@ -5541,7 +5633,8 @@ function guardarHilldunConfig() {
         termsDesc: document.getElementById('hcTermsDesc').value.trim(),
         netDays: parseInt(document.getElementById('hcNetDays').value) || 30,
         defaultCarrier: document.getElementById('hcDefaultCarrier').value.trim(),
-        ediTradingPartner: document.getElementById('hcEdiTradingPartner').value
+        ediTradingPartner: document.getElementById('hcEdiTradingPartner').value,
+        driveFolderUrl: document.getElementById('hcDriveFolderUrl').value.trim()
     };
     DB.setHilldunConfig(config);
     showAlert('hilldunAlert', 'Configuracion Hilldun guardada correctamente', 'success');
