@@ -2257,6 +2257,12 @@ function modalFactura(id = null) {
         cambiarTipoFactura(factura.esAbono ? 'abono' : 'factura');
         cargarPedidosCliente();
         cargarFacturasAbonables();
+        // Pre-cargar envío desde el primer pedido referenciado que tenga datos
+        const pedidosDB = DB.getPedidos();
+        const refs = (factura.pedidos || '').split(',').map(s => s.trim()).filter(Boolean);
+        const pedidoConEnvio = refs.map(n => pedidosDB.find(p => p.numero === n)).filter(Boolean).find(p => p.metodoEnvio || p.trackingNumber);
+        document.getElementById('facMetodoEnvio').value = pedidoConEnvio ? (pedidoConEnvio.metodoEnvio || '') : '';
+        document.getElementById('facTracking').value = pedidoConEnvio ? (pedidoConEnvio.trackingNumber || '') : '';
         editandoId = id;
     } else {
         title.textContent = 'Nueva Factura';
@@ -2271,6 +2277,8 @@ function modalFactura(id = null) {
         document.getElementById('facMoneda').value = 'EUR';
         document.getElementById('facImporte').value = '';
         document.getElementById('facNotas').value = '';
+        document.getElementById('facMetodoEnvio').value = '';
+        document.getElementById('facTracking').value = '';
         cambiarTipoFactura('factura');
         document.getElementById('pedidosCheckboxes').innerHTML = '';
         document.getElementById('pedidosDisponiblesInfo').textContent = 'Selecciona un cliente para ver sus pedidos';
@@ -2340,6 +2348,18 @@ function actualizarPedidosSeleccionados() {
         }
     });
     document.getElementById('facPedidos').value = seleccionados.join(', ');
+
+    // Si los campos de envío están vacíos, pre-rellenar desde el primer pedido seleccionado con datos
+    const metodoField = document.getElementById('facMetodoEnvio');
+    const trackingField = document.getElementById('facTracking');
+    if (seleccionados.length > 0 && !metodoField.value && !trackingField.value) {
+        const pedidos = DB.getPedidos();
+        const pedidoConEnvio = seleccionados.map(n => pedidos.find(p => p.numero === n)).filter(Boolean).find(p => p.metodoEnvio || p.trackingNumber);
+        if (pedidoConEnvio) {
+            metodoField.value = pedidoConEnvio.metodoEnvio || '';
+            trackingField.value = pedidoConEnvio.trackingNumber || '';
+        }
+    }
 }
 
 function guardarFactura() {
@@ -2352,6 +2372,8 @@ function guardarFactura() {
     const moneda = document.getElementById('facMoneda').value;
     let importe = parseFloat(document.getElementById('facImporte').value);
     const notas = document.getElementById('facNotas').value.trim();
+    const metodoEnvio = document.getElementById('facMetodoEnvio').value.trim();
+    const trackingNumber = document.getElementById('facTracking').value.trim();
     const esAbono = tipoFacturaModal === 'abono';
 
     if (!numero || !clienteId || !fecha || !vencimiento || isNaN(importe)) {
@@ -2426,6 +2448,24 @@ function guardarFactura() {
         }
     } else {
         showAlert('facturasAlert', `${tipoDoc} ${editandoId ? 'actualizado' : 'creado'} correctamente`, 'success');
+    }
+
+    // Actualizar datos de envío en los pedidos referenciados
+    if (!esAbono && pedidosStr && (metodoEnvio || trackingNumber)) {
+        const pedidosDB2 = DB.getPedidos();
+        const pedidoRefs = pedidosStr.split(',').map(s => s.trim().toLowerCase());
+        let envioActualizado = false;
+        pedidoRefs.forEach(ref => {
+            const idx = pedidosDB2.findIndex(p => p.numero.toLowerCase() === ref);
+            if (idx !== -1) {
+                pedidosDB2[idx] = { ...pedidosDB2[idx], metodoEnvio, trackingNumber };
+                envioActualizado = true;
+            }
+        });
+        if (envioActualizado) {
+            DB.setPedidos(pedidosDB2);
+            cargarTablaPedidos();
+        }
     }
 
     cerrarModal('modalFactura');
@@ -2808,6 +2848,7 @@ function cambiarTipoFactura(tipo) {
     document.getElementById('facTipoFactura').className = tipo === 'factura' ? 'btn btn-primary' : 'btn btn-secondary';
     document.getElementById('facTipoAbono').className = tipo === 'abono' ? 'btn btn-danger' : 'btn btn-secondary';
     document.getElementById('facPedidosGroup').style.display = tipo === 'factura' ? '' : 'none';
+    document.getElementById('facEnvioGroup').style.display = tipo === 'factura' ? '' : 'none';
     document.getElementById('facAbonoGroup').style.display = tipo === 'abono' ? '' : 'none';
     document.getElementById('facImporteHelp').style.display = tipo === 'abono' ? '' : 'none';
     document.getElementById('facImporteLabel').textContent = tipo === 'abono' ? 'Importe del abono *' : 'Importe *';

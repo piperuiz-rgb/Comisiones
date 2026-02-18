@@ -650,6 +650,29 @@
                 <input type="hidden" id="facPedidos">
                 <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">Selecciona un cliente para ver sus pedidos</small>
             </div>
+            <div class="form-row" id="facEnvioGroup">
+                <div class="form-group">
+                    <label for="facMetodoEnvio">M&eacute;todo de Env&iacute;o</label>
+                    <input type="text" id="facMetodoEnvio" list="metodoEnvioListFac" placeholder="Ej: DHL Express">
+                    <datalist id="metodoEnvioListFac">
+                        <option value="DHL Express">
+                        <option value="FedEx">
+                        <option value="FedEx International Priority">
+                        <option value="UPS">
+                        <option value="UPS Express">
+                        <option value="TNT">
+                        <option value="SEUR">
+                        <option value="MRW">
+                        <option value="Correos Express">
+                        <option value="GLS">
+                        <option value="Recogida en almac&eacute;n">
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label for="facTracking">Tracking Number</label>
+                    <input type="text" id="facTracking" placeholder="N&uacute;mero de seguimiento">
+                </div>
+            </div>
             <div class="form-group" id="facAbonoGroup" style="display:none;">
                 <label>Factura(s) que abona *</label>
                 <div id="facturasAbonablesCheckboxes" style="margin-bottom: 4px;"></div>
