@@ -311,6 +311,7 @@ const i18n = {
         invoiceNoDate: 'Nº Factura / Fecha Cobro',
         client: 'Cliente',
         ordersOrCredited: 'Pedido(s) / Fact. abonadas',
+        joorPO: 'Joor PO',
         issueDate: 'Fecha Emisión',
         paymentDate: 'Fecha Cobro / Emisión',
         amount: 'Importe',
@@ -349,6 +350,7 @@ const i18n = {
         invoiceNoDate: 'Invoice No. / Payment Date',
         client: 'Client',
         ordersOrCredited: 'Order(s) / Credited Invoices',
+        joorPO: 'Joor PO',
         issueDate: 'Issue Date',
         paymentDate: 'Payment / Issue Date',
         amount: 'Amount',
@@ -3448,6 +3450,29 @@ function generarInforme() {
     const cobros = DB.getCobros();
     const clientes = DB.getClientes();
     const showrooms = DB.getShowrooms();
+    const pedidos = DB.getPedidos();
+
+    // Obtiene el Joor PO a partir de los números de pedido de una factura
+    function getJoorPOParaFactura(factura) {
+        if (factura.esAbono) {
+            const refs = (factura.facturasAbonadas || '').split(',').map(s => s.trim()).filter(Boolean);
+            const joorPOs = refs.flatMap(ref => {
+                const factRef = facturas.find(f => f.numero.toLowerCase() === ref.toLowerCase() && !f.esAbono);
+                if (!factRef) return [];
+                const nums = (factRef.pedidos || '').split(',').map(s => s.trim()).filter(Boolean);
+                return nums.map(n => {
+                    const p = pedidos.find(p => p.numero && p.numero.trim() === n);
+                    return p && p.joorPO ? p.joorPO.trim() : '';
+                }).filter(Boolean);
+            });
+            return [...new Set(joorPOs)].join(', ');
+        }
+        const nums = (factura.pedidos || '').split(',').map(s => s.trim()).filter(Boolean);
+        return nums.map(n => {
+            const p = pedidos.find(p => p.numero && p.numero.trim() === n);
+            return p && p.joorPO ? p.joorPO.trim() : '';
+        }).filter(Boolean).join(', ');
+    }
 
     const facturasComision = [];
     const abonosYaIncluidos = new Set();
@@ -3501,7 +3526,8 @@ function generarInforme() {
                         fechaCobro100,
                         totalCobrado: acumulado,
                         comision: redondear2(factura.importe * showroom.comision / 100),
-                        pedidosRef: factura.pedidos || ''
+                        pedidosRef: factura.pedidos || '',
+                        joorPO: getJoorPOParaFactura(factura)
                     });
 
                     // Escenarios 1 y 2: incluir abonos vinculados
@@ -3529,6 +3555,7 @@ function generarInforme() {
                                 totalCobrado: 0,
                                 comision: redondear2(abono.importe * showroom.comision / 100),
                                 pedidosRef: abono.facturasAbonadas || '',
+                                joorPO: getJoorPOParaFactura(abono),
                                 esAbono: true
                             });
                             abonosYaIncluidos.add(abono.id);
@@ -3588,6 +3615,7 @@ function generarInforme() {
                         totalCobrado: 0,
                         comision: redondear2(abono.importe * showroom.comision / 100),
                         pedidosRef: abono.facturasAbonadas || '',
+                        joorPO: getJoorPOParaFactura(abono),
                         esAbono: true
                     });
                 }
@@ -3695,6 +3723,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                 item.factura.numero,
                 item.cliente.nombre,
                 refCol,
+                item.joorPO || '',
                 fd(item.factura.fecha),
                 fd(item.fechaCobro100),
                 moneda,
@@ -3721,6 +3750,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
                         '',
                         '',
                         '',
+                        '',
                         cobro.importe,
                         acumulado,
                         cobro.esAjuste ? t('adjustment', lang) : ''
@@ -3732,13 +3762,13 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
         });
 
         // Encabezados
-        sheetData.splice(4, 0, [t('type', lang), t('invoiceNoDate', lang), t('client', lang), t('ordersOrCredited', lang), t('issueDate', lang), t('paymentDate', lang), t('currency', lang), t('amount', lang), t('totalCollected', lang), t('commission', lang)]);
+        sheetData.splice(4, 0, [t('type', lang), t('invoiceNoDate', lang), t('client', lang), t('ordersOrCredited', lang), t('joorPO', lang), t('issueDate', lang), t('paymentDate', lang), t('currency', lang), t('amount', lang), t('totalCollected', lang), t('commission', lang)]);
         sheetData.splice(5, 0, ['']);
 
         // Totales por moneda
         sheetData.push(['']);
         Object.entries(data.totalesPorMoneda).forEach(([moneda, totales]) => {
-            sheetData.push(['', '', '', '', '', t('total', lang), moneda, totales.facturado, '', totales.comision]);
+            sheetData.push(['', '', '', '', '', '', t('total', lang), moneda, totales.facturado, '', totales.comision]);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
@@ -3747,6 +3777,7 @@ function crearInformeExcel(porShowroom, fechaInicio, fechaFin) {
             { wch: 22 },  // Nº Factura / Fecha
             { wch: 30 },  // Cliente
             { wch: 22 },  // Pedido(s)
+            { wch: 18 },  // Joor PO
             { wch: 15 },  // Fecha Emisión
             { wch: 18 },  // Fecha Cobro 100%
             { wch: 8 },   // Moneda
@@ -4057,6 +4088,7 @@ function crearInformeExcelDesdeHistorico(informe) {
                 item.factura.numero,
                 item.cliente.nombre,
                 refCol,
+                item.joorPO || '',
                 fd(item.factura.fecha),
                 fd(item.fechaCobro100),
                 moneda,
@@ -4078,7 +4110,7 @@ function crearInformeExcelDesdeHistorico(informe) {
                         cobro.pedidoId ? t('advance', lang) : t('payment', lang),
                         fd(cobro.fecha),
                         pedidoRef ? `(${t('orderRef', lang)}: ${pedidoRef})` : '',
-                        '', '', '', '',
+                        '', '', '', '', '',
                         cobro.importe,
                         acumulado,
                         cobro.esAjuste ? t('adjustment', lang) : ''
@@ -4089,18 +4121,18 @@ function crearInformeExcelDesdeHistorico(informe) {
             sheetData.push(['']);
         });
 
-        sheetData.splice(4, 0, [t('type', lang), t('invoiceNoDate', lang), t('client', lang), t('ordersOrCredited', lang), t('issueDate', lang), t('paymentDate', lang), t('currency', lang), t('amount', lang), t('totalCollected', lang), t('commission', lang)]);
+        sheetData.splice(4, 0, [t('type', lang), t('invoiceNoDate', lang), t('client', lang), t('ordersOrCredited', lang), t('joorPO', lang), t('issueDate', lang), t('paymentDate', lang), t('currency', lang), t('amount', lang), t('totalCollected', lang), t('commission', lang)]);
         sheetData.splice(5, 0, ['']);
 
         sheetData.push(['']);
         Object.entries(tpm).forEach(([moneda, totales]) => {
-            sheetData.push(['', '', '', '', '', t('total', lang), moneda, totales.facturado, '', totales.comision]);
+            sheetData.push(['', '', '', '', '', '', t('total', lang), moneda, totales.facturado, '', totales.comision]);
         });
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         ws['!cols'] = [
-            { wch: 14 }, { wch: 22 }, { wch: 30 }, { wch: 22 }, { wch: 15 },
-            { wch: 18 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
+            { wch: 14 }, { wch: 22 }, { wch: 30 }, { wch: 22 }, { wch: 18 },
+            { wch: 15 }, { wch: 18 }, { wch: 8 }, { wch: 18 }, { wch: 18 }, { wch: 18 }
         ];
         aplicarFormatoNumerosExcel(ws);
 
