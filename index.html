@@ -640,6 +640,17 @@
                     <input type="text" id="pedTracking" placeholder="N&uacute;mero de seguimiento">
                 </div>
             </div>
+            <hr style="border-color:var(--border); margin:16px 0">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pedDeliveryStart">Delivery Window &mdash; Inicio</label>
+                    <input type="date" id="pedDeliveryStart">
+                </div>
+                <div class="form-group">
+                    <label for="pedDeliveryEnd">Delivery Window &mdash; Fin</label>
+                    <input type="date" id="pedDeliveryEnd">
+                </div>
+            </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalPedido')">Cancelar</button>
                 <button class="btn btn-primary" onclick="guardarPedido()">Guardar</button>

@@ -1851,6 +1851,8 @@ function modalPedido(id = null) {
         document.getElementById('pedEstado').value = pedido.estadoPedido || 'confirmado';
         document.getElementById('pedMetodoEnvio').value = pedido.metodoEnvio || '';
         document.getElementById('pedTracking').value = pedido.trackingNumber || '';
+        document.getElementById('pedDeliveryStart').value = pedido.deliveryStartDate || '';
+        document.getElementById('pedDeliveryEnd').value = pedido.deliveryEndDate || '';
         editandoId = id;
     } else {
         title.textContent = 'Nuevo Pedido';
@@ -1866,6 +1868,8 @@ function modalPedido(id = null) {
         document.getElementById('pedEstado').value = 'confirmado';
         document.getElementById('pedMetodoEnvio').value = '';
         document.getElementById('pedTracking').value = '';
+        document.getElementById('pedDeliveryStart').value = '';
+        document.getElementById('pedDeliveryEnd').value = '';
         editandoId = null;
     }
 
@@ -1961,6 +1965,8 @@ function guardarPedido() {
     const estadoPedido = document.getElementById('pedEstado').value;
     const metodoEnvio = document.getElementById('pedMetodoEnvio').value.trim();
     const trackingNumber = document.getElementById('pedTracking').value.trim();
+    const deliveryStartDate = document.getElementById('pedDeliveryStart').value;
+    const deliveryEndDate = document.getElementById('pedDeliveryEnd').value;
 
     if (!numero || !clienteId || !fecha || isNaN(importe)) {
         alert('Por favor completa todos los campos');
@@ -1976,7 +1982,7 @@ function guardarPedido() {
         return;
     }
 
-    const extraFields = { joorPO, condicionesPago, estadoPedido, metodoEnvio, trackingNumber };
+    const extraFields = { joorPO, condicionesPago, estadoPedido, metodoEnvio, trackingNumber, deliveryStartDate, deliveryEndDate };
     if (condicionesPago === 'custom') {
         extraFields.anticipoPct = anticipoPct;
         extraFields.netDays = netDays;
@@ -4536,19 +4542,24 @@ function cargarVistaGlobal() {
             }
         }
 
-        // Find delivery window from linked solicitud de crédito
+        // Find delivery window: pedido's own fields take priority, solicitudCredito as fallback
         let deliveryStart = '', deliveryEnd = '', deliveryAlerta = false;
         if (!factura.esAbono && factura.pedidos) {
             const pedNums = factura.pedidos.split(',').map(p => p.trim()).filter(Boolean);
-            const pedSolicitud = pedNums
-                .map(n => pedidosPorNumero[n])
-                .filter(Boolean)
-                .map(p => solicitudesPorPedido[p.id])
-                .filter(Boolean)
-                .find(s => s.deliveryEndDate || s.deliveryStartDate);
-            if (pedSolicitud) {
-                deliveryStart = pedSolicitud.deliveryStartDate || '';
-                deliveryEnd = pedSolicitud.deliveryEndDate || '';
+            const pedObjs = pedNums.map(n => pedidosPorNumero[n]).filter(Boolean);
+            const pedConDelivery = pedObjs.find(p => p.deliveryStartDate || p.deliveryEndDate);
+            if (pedConDelivery) {
+                deliveryStart = pedConDelivery.deliveryStartDate || '';
+                deliveryEnd = pedConDelivery.deliveryEndDate || '';
+            } else {
+                const pedSolicitud = pedObjs
+                    .map(p => solicitudesPorPedido[p.id])
+                    .filter(Boolean)
+                    .find(s => s.deliveryEndDate || s.deliveryStartDate);
+                if (pedSolicitud) {
+                    deliveryStart = pedSolicitud.deliveryStartDate || '';
+                    deliveryEnd = pedSolicitud.deliveryEndDate || '';
+                }
             }
         }
         if (deliveryEnd) {
@@ -5085,18 +5096,26 @@ function cargarAlertasVencimiento() {
     });
 
     // Delivery windows próximos a vencer (5 días)
-    const deliveryProximos = [];
+    // Build map pedidoId -> deliveryEndDate; pedido's own field takes priority over solicitud
+    const deliveryMap = new Map();
     solicitudes.forEach(s => {
-        if (!s.deliveryEndDate) return;
-        const endDate = new Date(s.deliveryEndDate + 'T00:00:00');
+        if (s.deliveryEndDate) deliveryMap.set(s.pedidoId, s.deliveryEndDate);
+    });
+    pedidos.forEach(p => {
+        if (p.deliveryEndDate) deliveryMap.set(p.id, p.deliveryEndDate); // override
+    });
+
+    const deliveryProximos = [];
+    deliveryMap.forEach((deliveryEndDate, pedidoId) => {
+        const endDate = new Date(deliveryEndDate + 'T00:00:00');
         if (endDate >= hoy && endDate <= en5dias) {
-            const pedido = pedidos.find(p => p.id === s.pedidoId);
+            const pedido = pedidos.find(p => p.id === pedidoId);
             const cliente = pedido ? clientes.find(c => c.id === pedido.clienteId) : null;
             const diasRestantes = Math.ceil((endDate - hoy) / (1000 * 60 * 60 * 24));
             deliveryProximos.push({
                 pedido: pedido ? pedido.numero : '?',
                 cliente: cliente ? cliente.nombre : '-',
-                fin: formatDate(s.deliveryEndDate),
+                fin: formatDate(deliveryEndDate),
                 dias: diasRestantes
             });
         }
