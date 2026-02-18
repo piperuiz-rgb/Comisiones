@@ -38,8 +38,7 @@
             <button class="nav-tab" onclick="switchTab('pedidos')">Pedidos</button>
             <button class="nav-tab" onclick="switchTab('facturas')">Facturas</button>
             <button class="nav-tab" onclick="switchTab('cobros')">Cobros</button>
-            <button class="nav-tab" onclick="switchTab('informes')">Informes</button>
-            <button class="nav-tab" onclick="switchTab('liquidaciones')">Liquidaciones</button>
+            <button class="nav-tab" onclick="switchTab('informes')">Comisiones</button>
             <button class="nav-tab" onclick="switchTab('historico')">Hist&oacute;rico</button>
             <button class="nav-tab" onclick="switchTab('hilldun')">Hilldun Cr&eacute;dito</button>
         </div>
@@ -257,21 +256,6 @@
                 </div>
                 <button class="btn btn-primary" onclick="generarExtractoCliente()">Ver Extracto</button>
                 <div id="extractoResultado" style="margin-top: 20px;"></div>
-            </div>
-        </div>
-
-        <!-- TAB: LIQUIDACIONES -->
-        <div id="tab-liquidaciones" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-header-left">
-                        <div class="card-icon">L</div>
-                        <div class="card-title">Liquidaciones de Comisiones</div>
-                    </div>
-                    <button class="btn btn-success" onclick="modalLiquidacion()">+ Nueva Liquidaci&oacute;n</button>
-                </div>
-                <div class="alert alert-info" id="liquidacionesAlert"></div>
-                <div class="table-container" id="liquidacionesTable"></div>
             </div>
         </div>
 
@@ -880,57 +864,6 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalSaldoResidual')">Dejar Pendiente</button>
                 <button class="btn btn-primary" onclick="marcarComoCompleto()">Marcar como Pagada al 100%</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal Liquidación -->
-    <div id="modalLiquidacion" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title" id="modalLiquidacionTitle">Nueva Liquidaci&oacute;n</h3>
-                <button class="modal-close" onclick="cerrarModal('modalLiquidacion')">&times;</button>
-            </div>
-            <div class="form-group">
-                <label for="liqShowroom">Showroom *</label>
-                <select id="liqShowroom" required>
-                    <option value="">Seleccionar showroom...</option>
-                </select>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="liqFechaInicio">Periodo Inicio *</label>
-                    <input type="date" id="liqFechaInicio" required>
-                </div>
-                <div class="form-group">
-                    <label for="liqFechaFin">Periodo Fin *</label>
-                    <input type="date" id="liqFechaFin" required>
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="liqMoneda">Moneda *</label>
-                    <select id="liqMoneda" required>
-                        <option value="EUR">EUR (&euro;)</option>
-                        <option value="USD">USD ($)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label for="liqImporte">Importe Pagado *</label>
-                    <input type="number" id="liqImporte" step="0.01" min="0" required>
-                </div>
-            </div>
-            <div class="form-group">
-                <label for="liqFechaPago">Fecha de Pago *</label>
-                <input type="date" id="liqFechaPago" required>
-            </div>
-            <div class="form-group">
-                <label for="liqNotas">Notas</label>
-                <textarea id="liqNotas" rows="2"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="cerrarModal('modalLiquidacion')">Cancelar</button>
-                <button class="btn btn-primary" onclick="guardarLiquidacion()">Guardar</button>
             </div>
         </div>
     </div>

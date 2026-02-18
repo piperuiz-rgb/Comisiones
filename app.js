@@ -84,7 +84,7 @@ function t(key, lang) {
 // SISTEMA DE ALMACENAMIENTO (Firestore + cache en memoria)
 // ========================================
 
-const COLLECTIONS = ['showrooms', 'clientes', 'pedidos', 'facturas', 'cobros', 'liquidaciones', 'historicoInformes', 'solicitudesCredito', 'hilldunConfig'];
+const COLLECTIONS = ['showrooms', 'clientes', 'pedidos', 'facturas', 'cobros', 'historicoInformes', 'solicitudesCredito', 'hilldunConfig'];
 
 const DB = {
     _cache: {},
@@ -164,7 +164,6 @@ const DB = {
         else if (tabId === 'facturas') cargarTablaFacturas();
         else if (tabId === 'cobros') cargarTablaCobros();
         else if (tabId === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
-        else if (tabId === 'liquidaciones') cargarTablaLiquidaciones();
         else if (tabId === 'historico') cargarHistoricoInformes();
         else if (tabId === 'hilldun') cargarTablaHilldun();
     },
@@ -200,9 +199,6 @@ const DB = {
 
     getCobros: () => DB.getArray('cobros'),
     setCobros: (data) => DB.set('cobros', data),
-
-    getLiquidaciones: () => DB.getArray('liquidaciones'),
-    setLiquidaciones: (data) => DB.set('liquidaciones', data),
 
     getHistoricoInformes: () => DB.getArray('historicoInformes'),
     addHistoricoInforme: (informe) => {
@@ -400,7 +396,6 @@ function switchTab(tabName) {
     if (tabName === 'facturas') cargarTablaFacturas();
     if (tabName === 'cobros') cargarTablaCobros();
     if (tabName === 'informes') { cargarSelectShowrooms(); cargarSelectExtractoClientes(); }
-    if (tabName === 'liquidaciones') cargarTablaLiquidaciones();
     if (tabName === 'historico') cargarHistoricoInformes();
     if (tabName === 'hilldun') cargarTablaHilldun();
 }
@@ -4212,7 +4207,6 @@ function exportarBackup() {
             pedidos: DB.getPedidos(),
             facturas: DB.getFacturas(),
             cobros: DB.getCobros(),
-            liquidaciones: DB.getLiquidaciones(),
             historicoInformes: DB.getHistoricoInformes()
         }
     };
@@ -4243,7 +4237,6 @@ function importarBackup(file) {
             if (backup.datos.pedidos) DB.setPedidos(backup.datos.pedidos);
             if (backup.datos.facturas) DB.setFacturas(backup.datos.facturas);
             if (backup.datos.cobros) DB.setCobros(backup.datos.cobros);
-            if (backup.datos.liquidaciones) DB.setLiquidaciones(backup.datos.liquidaciones);
             if (backup.datos.historicoInformes) DB.set('historicoInformes', backup.datos.historicoInformes);
 
             alert('Backup restaurado correctamente. La página se recargará.');
@@ -4457,144 +4450,6 @@ function cargarAgingReport() {
     });
     html += '</tbody></table>';
     container.innerHTML = html;
-}
-
-// ========================================
-// LIQUIDACIONES (PAGO DE COMISIONES)
-// ========================================
-
-function modalLiquidacion(id = null) {
-    const modal = document.getElementById('modalLiquidacion');
-    const title = document.getElementById('modalLiquidacionTitle');
-
-    const showrooms = DB.getShowrooms();
-    const select = document.getElementById('liqShowroom');
-    select.innerHTML = '<option value="">Seleccionar showroom...</option>';
-    showrooms.forEach(s => { select.innerHTML += `<option value="${s.id}">${s.nombre}</option>`; });
-
-    if (id) {
-        const liq = DB.getLiquidaciones().find(l => l.id === id);
-        title.textContent = 'Editar Liquidación';
-        document.getElementById('liqShowroom').value = liq.showroomId;
-        document.getElementById('liqFechaInicio').value = liq.fechaInicio;
-        document.getElementById('liqFechaFin').value = liq.fechaFin;
-        document.getElementById('liqMoneda').value = liq.moneda;
-        document.getElementById('liqImporte').value = liq.importe;
-        document.getElementById('liqFechaPago').value = liq.fechaPago;
-        document.getElementById('liqNotas').value = liq.notas || '';
-        editandoId = id;
-    } else {
-        title.textContent = 'Nueva Liquidación';
-        document.getElementById('liqShowroom').value = '';
-        document.getElementById('liqFechaInicio').value = '';
-        document.getElementById('liqFechaFin').value = '';
-        document.getElementById('liqMoneda').value = 'EUR';
-        document.getElementById('liqImporte').value = '';
-        document.getElementById('liqFechaPago').valueAsDate = new Date();
-        document.getElementById('liqNotas').value = '';
-        editandoId = null;
-    }
-
-    modal.classList.add('visible');
-}
-
-function guardarLiquidacion() {
-    const showroomId = document.getElementById('liqShowroom').value;
-    const fechaInicio = document.getElementById('liqFechaInicio').value;
-    const fechaFin = document.getElementById('liqFechaFin').value;
-    const moneda = document.getElementById('liqMoneda').value;
-    const importe = parseFloat(document.getElementById('liqImporte').value);
-    const fechaPago = document.getElementById('liqFechaPago').value;
-    const notas = document.getElementById('liqNotas').value.trim();
-
-    if (!showroomId || !fechaInicio || !fechaFin || !fechaPago || isNaN(importe)) {
-        alert('Por favor completa todos los campos obligatorios');
-        return;
-    }
-
-    const liquidaciones = DB.getLiquidaciones();
-
-    if (editandoId) {
-        const index = liquidaciones.findIndex(l => l.id === editandoId);
-        liquidaciones[index] = { ...liquidaciones[index], showroomId, fechaInicio, fechaFin, moneda, importe, fechaPago, notas };
-    } else {
-        liquidaciones.push({
-            id: generarId(),
-            showroomId, fechaInicio, fechaFin, moneda, importe, fechaPago, notas,
-            createdAt: new Date().toISOString()
-        });
-    }
-
-    DB.setLiquidaciones(liquidaciones);
-    cerrarModal('modalLiquidacion');
-    cargarTablaLiquidaciones();
-    showAlert('liquidacionesAlert', `Liquidación ${editandoId ? 'actualizada' : 'registrada'} correctamente`, 'success');
-}
-
-function cargarTablaLiquidaciones() {
-    const liquidaciones = DB.getLiquidaciones();
-    const showrooms = DB.getShowrooms();
-    const container = document.getElementById('liquidacionesTable');
-
-    if (liquidaciones.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">L</div><p>No hay liquidaciones registradas</p><p style="font-size: 14px; margin-top: 8px;">Registra el pago de comisiones a showrooms</p></div>';
-        return;
-    }
-
-    let html = `<div class="filter-bar">
-        <input type="text" id="buscarLiquidacion" placeholder="Buscar liquidaci&oacute;n...">
-        <select id="filtroShowroomLiq">
-            <option value="">Todos los showrooms</option>
-            ${showrooms.map(s => `<option value="${s.id}">${s.nombre}</option>`).join('')}
-        </select>
-    </div>`;
-
-    html += `<table><thead><tr>
-        <th class="sortable" data-col="showroom" onclick="ordenarTabla('liquidacionesTableBody','showroom','text')">Showroom</th>
-        <th>Periodo</th>
-        <th class="sortable" data-col="importe" onclick="ordenarTabla('liquidacionesTableBody','importe','number')">Importe Pagado</th>
-        <th class="sortable" data-col="fechaPago" onclick="ordenarTabla('liquidacionesTableBody','fechaPago','date')">Fecha Pago</th>
-        <th>Notas</th>
-        <th>Acciones</th>
-    </tr></thead><tbody id="liquidacionesTableBody">`;
-
-    liquidaciones.sort((a, b) => new Date(b.fechaPago) - new Date(a.fechaPago)).forEach(liq => {
-        const showroom = showrooms.find(s => s.id === liq.showroomId);
-        const showNombre = showroom ? showroom.nombre : '-';
-        html += `<tr data-sort-key="1" data-sort-showroom="${showNombre}" data-sort-importe="${liq.importe}" data-sort-fechaPago="${liq.fechaPago}" data-showroom="${liq.showroomId}" data-buscar="${showNombre.toLowerCase()}">
-            <td><strong>${showNombre}</strong></td>
-            <td>${formatDate(liq.fechaInicio)} - ${formatDate(liq.fechaFin)}</td>
-            <td>${formatCurrency(liq.importe, liq.moneda)}</td>
-            <td>${formatDate(liq.fechaPago)}</td>
-            <td>${liq.notas || '-'}</td>
-            <td><div class="actions">
-                <button class="btn btn-secondary btn-icon" onclick="modalLiquidacion('${liq.id}')">Edit</button>
-                <button class="btn btn-danger btn-icon" onclick="eliminarLiquidacion('${liq.id}')">Del</button>
-            </div></td>
-        </tr>`;
-    });
-
-    html += '</tbody></table>';
-    container.innerHTML = html;
-
-    const filtrarLiq = () => {
-        const q = document.getElementById('buscarLiquidacion').value.toLowerCase();
-        const showFiltro = document.getElementById('filtroShowroomLiq').value;
-        document.querySelectorAll('#liquidacionesTableBody tr').forEach(r => {
-            const coincideBusqueda = !q || (r.getAttribute('data-buscar') || '').includes(q);
-            const coincideShow = !showFiltro || r.getAttribute('data-showroom') === showFiltro;
-            r.style.display = (coincideBusqueda && coincideShow) ? '' : 'none';
-        });
-    };
-    document.getElementById('buscarLiquidacion').addEventListener('input', filtrarLiq);
-    document.getElementById('filtroShowroomLiq').addEventListener('change', filtrarLiq);
-}
-
-function eliminarLiquidacion(id) {
-    if (!confirm('¿Eliminar esta liquidación?')) return;
-    DB.setLiquidaciones(DB.getLiquidaciones().filter(l => l.id !== id));
-    cargarTablaLiquidaciones();
-    showAlert('liquidacionesAlert', 'Liquidación eliminada', 'success');
 }
 
 // ========================================
@@ -4973,8 +4828,7 @@ function autoBackup() {
             clientes: DB.getClientes(),
             pedidos: DB.getPedidos(),
             facturas: DB.getFacturas(),
-            cobros: DB.getCobros(),
-            liquidaciones: DB.getLiquidaciones()
+            cobros: DB.getCobros()
         };
         try {
             localStorage.setItem('autoBackup', JSON.stringify(backup));
@@ -4999,7 +4853,6 @@ function restaurarAutoBackup() {
     DB.setPedidos(data.pedidos || []);
     DB.setFacturas(data.facturas || []);
     DB.setCobros(data.cobros || []);
-    DB.setLiquidaciones(data.liquidaciones || []);
 
     alert('Datos restaurados correctamente');
     location.reload();
@@ -5020,8 +4873,7 @@ window.addEventListener('beforeunload', function() {
         clientes: DB.getClientes(),
         pedidos: DB.getPedidos(),
         facturas: DB.getFacturas(),
-        cobros: DB.getCobros(),
-        liquidaciones: DB.getLiquidaciones()
+        cobros: DB.getCobros()
     };
     try {
         localStorage.setItem('autoBackup', JSON.stringify(backup));
