@@ -513,15 +513,148 @@ function calcularEstadoPedido(pedidoId) {
 // INICIALIZACIÓN
 // ========================================
 
-document.addEventListener('DOMContentLoaded', async function() {
-    // Mostrar estado de carga mientras se conecta a Firestore
+// ========================================
+// MÓDULO: AUTENTICACIÓN
+// ========================================
+
+let currentUserRole = null;
+let currentUserData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    auth.onAuthStateChanged(async function(user) {
+        if (user) {
+            await manejarUsuarioLogueado(user);
+        } else {
+            mostrarPantallaLogin();
+        }
+    });
+});
+
+async function manejarUsuarioLogueado(user) {
+    try {
+        const userDoc = await db.collection('users').doc(user.uid).get();
+
+        if (!userDoc.exists) {
+            // Si no hay ningún usuario aún, el primero es admin (bootstrap)
+            const snapshot = await db.collection('users').limit(1).get();
+            if (snapshot.empty) {
+                await db.collection('users').doc(user.uid).set({
+                    email: user.email || user.displayName,
+                    role: 'admin',
+                    createdAt: new Date().toISOString()
+                });
+                currentUserRole = 'admin';
+                currentUserData = { role: 'admin', email: user.email };
+            } else {
+                mostrarAccesoDenegado(user);
+                return;
+            }
+        } else {
+            currentUserRole = userDoc.data().role;
+            currentUserData = userDoc.data();
+        }
+
+        ocultarPantallaLogin(user);
+
+        if (currentUserRole === 'admin') {
+            await inicializarAppAdmin();
+        } else if (currentUserRole === 'showroom') {
+            await inicializarPortalShowroomAuth(currentUserData.showroomId);
+        }
+    } catch (error) {
+        console.error('Error al verificar acceso:', error);
+        mostrarErrorLogin('Error al verificar permisos. Comprueba tu conexión.');
+    }
+}
+
+function mostrarPantallaLogin() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('mainHeader').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'none';
+}
+
+function ocultarPantallaLogin(user) {
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('mainHeader').style.display = 'block';
+    // Mostrar info usuario en header
+    document.getElementById('userEmailDisplay').textContent = user.email || user.displayName;
+    document.getElementById('userInfo').style.display = 'flex';
+}
+
+function mostrarAccesoDenegado(user) {
+    const form = document.getElementById('loginForm');
+    form.innerHTML = `
+        <div class="login-error" style="display:block; margin-bottom: 20px;">
+            <strong>Sin acceso</strong><br>
+            <span style="font-size:13px">${user.email || user.displayName} no tiene permisos asignados.<br>Contacta con el administrador.</span>
+        </div>
+        <button onclick="cerrarSesion()" class="btn btn-secondary" style="width:100%; padding:12px;">Cerrar sesi&oacute;n</button>
+    `;
+    document.getElementById('loginOverlay').style.display = 'flex';
+}
+
+async function loginConGoogle() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+        document.getElementById('loginError').style.display = 'none';
+        await auth.signInWithPopup(provider);
+    } catch (error) {
+        if (error.code !== 'auth/popup-closed-by-user') {
+            mostrarErrorLogin(mensajeErrorAuth(error.code));
+        }
+    }
+}
+
+async function loginConEmail() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) {
+        mostrarErrorLogin('Introduce email y contraseña');
+        return;
+    }
+    try {
+        document.getElementById('loginError').style.display = 'none';
+        await auth.signInWithEmailAndPassword(email, password);
+    } catch (error) {
+        mostrarErrorLogin(mensajeErrorAuth(error.code));
+    }
+}
+
+async function cerrarSesion() {
+    if (confirm('¿Cerrar sesión?')) {
+        await auth.signOut();
+        location.reload();
+    }
+}
+
+function mostrarErrorLogin(msg) {
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function mensajeErrorAuth(code) {
+    const errores = {
+        'auth/user-not-found': 'Email no registrado',
+        'auth/wrong-password': 'Contraseña incorrecta',
+        'auth/invalid-credential': 'Email o contraseña incorrectos',
+        'auth/invalid-email': 'Email inválido',
+        'auth/too-many-requests': 'Demasiados intentos. Espera un momento.',
+        'auth/network-request-failed': 'Error de conexión. Comprueba internet.',
+    };
+    return errores[code] || 'Error al iniciar sesión (' + code + ')';
+}
+
+async function inicializarAppAdmin() {
+    // Mostrar acciones de admin en header
+    document.getElementById('adminActions').style.display = 'flex';
+    document.getElementById('mainApp').style.display = 'block';
+
+    // Cargar datos
     const container = document.querySelector('.container');
     container.style.opacity = '0.4';
     container.style.pointerEvents = 'none';
-
-    // Cargar datos desde Firestore (con fallback a localStorage)
     await DB.init();
-
     container.style.opacity = '1';
     container.style.pointerEvents = '';
 
@@ -534,7 +667,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const treintaDias = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000);
     document.getElementById('facVencimiento').valueAsDate = treintaDias;
 
-    // Fechas informe (mes actual)
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
     document.getElementById('infFechaInicio').valueAsDate = primerDia;
@@ -563,9 +695,145 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (e.target.files.length > 0) importarCreditResponses(e.target.files[0]);
     });
 
-    // Cargar dashboard inicial
     cargarDashboard();
-});
+}
+
+async function inicializarPortalShowroomAuth(showroomId) {
+    if (!showroomId) {
+        mostrarAccesoDenegado(auth.currentUser);
+        return;
+    }
+    await DB.init();
+    document.getElementById('mainApp').style.display = 'none';
+    let portal = document.getElementById('showroomPortal');
+    if (!portal) {
+        portal = document.createElement('div');
+        portal.id = 'showroomPortal';
+        document.body.appendChild(portal);
+    }
+    portal.style.display = 'block';
+    renderPortalShowroom(showroomId, null, true);
+}
+
+// ========================================
+// MÓDULO: GESTIÓN DE USUARIOS (ADMIN)
+// ========================================
+
+async function abrirGestionUsuarios() {
+    // Cargar showrooms en el select
+    const showrooms = DB.getShowrooms();
+    const sel = document.getElementById('nuevoUsuarioShowroom');
+    sel.innerHTML = '<option value="">Seleccionar showroom...</option>';
+    showrooms.forEach(s => {
+        sel.innerHTML += `<option value="${s.id}">${s.nombre}</option>`;
+    });
+
+    // Cargar lista de usuarios
+    await cargarListaUsuarios();
+
+    document.getElementById('modalUsuarios').style.display = 'flex';
+}
+
+async function cargarListaUsuarios() {
+    const container = document.getElementById('listaUsuarios');
+    try {
+        const snapshot = await db.collection('users').get();
+        if (snapshot.empty) {
+            container.innerHTML = '<p style="color:var(--gray-500)">No hay usuarios registrados</p>';
+            return;
+        }
+        const showrooms = DB.getShowrooms();
+        let html = '<table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="border-bottom:2px solid #E2E8F0;">';
+        html += '<th style="text-align:left;padding:8px 4px;">Email</th><th style="text-align:left;padding:8px 4px;">Rol</th><th style="text-align:left;padding:8px 4px;">Showroom</th><th style="padding:8px 4px;"></th>';
+        html += '</tr></thead><tbody>';
+        snapshot.forEach(doc => {
+            const u = doc.data();
+            const show = u.showroomId ? showrooms.find(s => s.id === u.showroomId) : null;
+            const rolLabel = { admin: 'Administrador', showroom: 'Showroom', client: 'Cliente' }[u.role] || u.role;
+            html += `<tr style="border-bottom:1px solid #F3F4F6;">
+                <td style="padding:8px 4px;">${u.email || '-'}</td>
+                <td style="padding:8px 4px;"><span class="badge badge-${u.role === 'admin' ? 'primary' : 'secondary'}">${rolLabel}</span></td>
+                <td style="padding:8px 4px;">${show ? show.nombre : '-'}</td>
+                <td style="padding:8px 4px;text-align:right;"><button class="btn btn-danger btn-icon" onclick="eliminarUsuario('${doc.id}')" title="Revocar acceso">&times;</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = '<p style="color:var(--danger)">Error al cargar usuarios: ' + e.message + '</p>';
+    }
+}
+
+function toggleShowroomSelector() {
+    const rol = document.getElementById('nuevoUsuarioRol').value;
+    document.getElementById('nuevoUsuarioShowroomGroup').style.display = rol === 'showroom' ? 'block' : 'none';
+}
+
+async function crearNuevoUsuario() {
+    const email = document.getElementById('nuevoUsuarioEmail').value.trim();
+    const password = document.getElementById('nuevoUsuarioPassword').value;
+    const rol = document.getElementById('nuevoUsuarioRol').value;
+    const showroomId = document.getElementById('nuevoUsuarioShowroom').value;
+    const errorEl = document.getElementById('nuevoUsuarioError');
+    const exitoEl = document.getElementById('nuevoUsuarioExito');
+
+    errorEl.style.display = 'none';
+    exitoEl.style.display = 'none';
+
+    if (!email || !password) {
+        errorEl.textContent = 'Email y contraseña son obligatorios';
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (password.length < 6) {
+        errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (rol === 'showroom' && !showroomId) {
+        errorEl.textContent = 'Selecciona el showroom asignado';
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        // Crear usuario con la app secundaria (no cierra sesión del admin)
+        const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+        const uid = cred.user.uid;
+
+        // Guardar rol en Firestore
+        const userData = { email, role: rol, createdAt: new Date().toISOString() };
+        if (rol === 'showroom') userData.showroomId = showroomId;
+        await db.collection('users').doc(uid).set(userData);
+
+        // Cerrar sesión de la app secundaria
+        await secondaryAuth.signOut();
+
+        exitoEl.textContent = `Acceso creado para ${email}`;
+        exitoEl.style.display = 'block';
+        document.getElementById('nuevoUsuarioEmail').value = '';
+        document.getElementById('nuevoUsuarioPassword').value = '';
+
+        await cargarListaUsuarios();
+    } catch (error) {
+        errorEl.textContent = mensajeErrorAuth(error.code) || error.message;
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+    }
+}
+
+async function eliminarUsuario(uid) {
+    if (!confirm('¿Revocar acceso a este usuario? Solo se elimina el acceso a la app, no la cuenta de Firebase.')) return;
+    try {
+        await db.collection('users').doc(uid).delete();
+        await cargarListaUsuarios();
+    } catch (e) {
+        alert('Error al revocar acceso: ' + e.message);
+    }
+}
 
 // ========================================
 // MÓDULO: DASHBOARD
@@ -5670,7 +5938,7 @@ function cerrarPortalShowroom() {
     document.getElementById('mainApp').style.display = 'block';
 }
 
-function renderPortalShowroom(showroomId, lang) {
+function renderPortalShowroom(showroomId, lang, standalone) {
     const showrooms = DB.getShowrooms();
     const showroom = showrooms.find(s => s.id === showroomId);
     const clientes = DB.getClientes().filter(c => c.showroomId === showroomId);
@@ -5688,7 +5956,9 @@ function renderPortalShowroom(showroomId, lang) {
                 <h1 style="margin:0; color:var(--text-primary)">${showroom.nombre} - ${t('portalTitle', lang)}</h1>
                 <p style="color:var(--text-secondary); margin:4px 0 0">${t('portalSubtitle', lang)}</p>
             </div>
-            <button class="btn btn-secondary" onclick="cerrarPortalShowroom()">${t('backToApp', lang)}</button>
+            ${standalone
+                ? `<button class="btn btn-secondary" onclick="cerrarSesion()" style="font-size:13px;">Cerrar sesi&oacute;n</button>`
+                : `<button class="btn btn-secondary" onclick="cerrarPortalShowroom()">${t('backToApp', lang)}</button>`}
         </div>
 
         <div class="filter-bar" style="margin-bottom:16px">

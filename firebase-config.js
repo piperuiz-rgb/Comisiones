@@ -8,10 +8,15 @@ const firebaseConfig = {
     appId: "1:788824483061:web:426710fdd532d64e53d1bc"
 };
 
-// Initialize Firebase
+// Initialize Firebase (main app)
 firebase.initializeApp(firebaseConfig);
 
-// Initialize Firestore
+// Initialize Firestore and Auth
 const db = firebase.firestore();
+const auth = firebase.auth();
+
+// Secondary app instance for creating users without signing out admin
+const secondaryApp = firebase.initializeApp(firebaseConfig, 'secondary');
+const secondaryAuth = secondaryApp.auth();
 
 console.log("Firebase inicializado correctamente - Proyecto: comisiones-app-33035");
