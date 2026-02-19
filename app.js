@@ -521,7 +521,9 @@ let currentUserRole = null;
 let currentUserData = null;
 
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('[Auth] DOMContentLoaded - iniciando listener de autenticación');
     auth.onAuthStateChanged(async function(user) {
+        console.log('[Auth] Estado de auth recibido:', user ? ('Usuario: ' + user.email) : 'Sin sesión');
         if (user) {
             await manejarUsuarioLogueado(user);
         } else {
@@ -532,6 +534,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function manejarUsuarioLogueado(user) {
     try {
+        console.log('[Auth] Buscando rol en Firestore para uid:', user.uid);
         const userDoc = await db.collection('users').doc(user.uid).get();
 
         if (!userDoc.exists) {
@@ -554,6 +557,7 @@ async function manejarUsuarioLogueado(user) {
             currentUserData = userDoc.data();
         }
 
+        console.log('[Auth] Rol asignado:', currentUserRole);
         ocultarPantallaLogin(user);
 
         if (currentUserRole === 'admin') {
@@ -568,17 +572,25 @@ async function manejarUsuarioLogueado(user) {
 }
 
 function mostrarPantallaLogin() {
-    document.getElementById('loginOverlay').style.display = 'flex';
-    document.getElementById('mainHeader').style.display = 'none';
-    document.getElementById('mainApp').style.display = 'none';
+    console.log('[Auth] Mostrando pantalla de login');
+    const overlay = document.getElementById('loginOverlay');
+    const header = document.getElementById('mainHeader');
+    const app = document.getElementById('mainApp');
+    if (overlay) overlay.style.display = 'flex';
+    if (header) header.style.display = 'none';
+    if (app) app.style.display = 'none';
 }
 
 function ocultarPantallaLogin(user) {
-    document.getElementById('loginOverlay').style.display = 'none';
-    document.getElementById('mainHeader').style.display = 'block';
-    // Mostrar info usuario en header
-    document.getElementById('userEmailDisplay').textContent = user.email || user.displayName;
-    document.getElementById('userInfo').style.display = 'flex';
+    console.log('[Auth] Ocultando pantalla de login, mostrando header');
+    const overlay = document.getElementById('loginOverlay');
+    const header = document.getElementById('mainHeader');
+    const emailEl = document.getElementById('userEmailDisplay');
+    const userInfo = document.getElementById('userInfo');
+    if (overlay) overlay.style.display = 'none';
+    if (header) header.style.display = 'block';
+    if (emailEl) emailEl.textContent = user.email || user.displayName || '';
+    if (userInfo) userInfo.style.display = 'flex';
 }
 
 function mostrarAccesoDenegado(user) {
@@ -646,9 +658,12 @@ function mensajeErrorAuth(code) {
 }
 
 async function inicializarAppAdmin() {
+    console.log('[Auth] Inicializando app de administrador');
     // Mostrar acciones de admin en header
-    document.getElementById('adminActions').style.display = 'flex';
-    document.getElementById('mainApp').style.display = 'block';
+    const adminActions = document.getElementById('adminActions');
+    const mainApp = document.getElementById('mainApp');
+    if (adminActions) adminActions.style.display = 'flex';
+    if (mainApp) mainApp.style.display = 'block';
 
     // Cargar datos
     const container = document.querySelector('.container');
