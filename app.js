@@ -4615,21 +4615,21 @@ function renderizarTablaVistaGlobal(rows, driveFolderUrl = '') {
     });
 
     let html = `<table><thead><tr>
-        <th>Factura</th>
+        <th class="sortable" data-col="numero" onclick="ordenarTabla('vistaGlobalTableBody','numero','text')">Factura</th>
         <th>Tipo</th>
-        <th>Cliente</th>
-        <th>Showroom</th>
+        <th class="sortable" data-col="cliente" onclick="ordenarTabla('vistaGlobalTableBody','cliente','text')">Cliente</th>
+        <th class="sortable" data-col="showroom" onclick="ordenarTabla('vistaGlobalTableBody','showroom','text')">Showroom</th>
         <th>Ref. Origen</th>
         <th>Transportista</th>
         <th>Tracking</th>
-        <th>F. Env&iacute;o</th>
+        <th class="sortable" data-col="envio" onclick="ordenarTabla('vistaGlobalTableBody','envio','date')">F. Env&iacute;o</th>
         <th>Delivery Window</th>
-        <th>Vencimiento</th>
-        <th style="text-align:right">Importe</th>
-        <th style="text-align:right">Cobrado</th>
-        <th style="text-align:right">Pendiente</th>
-        <th>Estado</th>
-        <th style="text-align:right">Comisi&oacute;n</th>
+        <th class="sortable" data-col="vencimiento" onclick="ordenarTabla('vistaGlobalTableBody','vencimiento','date')">Vencimiento</th>
+        <th class="sortable" data-col="importe" onclick="ordenarTabla('vistaGlobalTableBody','importe','number')" style="text-align:right">Importe</th>
+        <th class="sortable" data-col="cobrado" onclick="ordenarTabla('vistaGlobalTableBody','cobrado','number')" style="text-align:right">Cobrado</th>
+        <th class="sortable" data-col="pendiente" onclick="ordenarTabla('vistaGlobalTableBody','pendiente','number')" style="text-align:right">Pendiente</th>
+        <th class="sortable" data-col="estado" onclick="ordenarTabla('vistaGlobalTableBody','estado','text')">Estado</th>
+        <th class="sortable" data-col="comision" onclick="ordenarTabla('vistaGlobalTableBody','comision','number')" style="text-align:right">Comisi&oacute;n</th>
         <th>PDF</th>
     </tr></thead><tbody id="vistaGlobalTableBody">`;
 
@@ -4676,6 +4676,17 @@ function renderizarTablaVistaGlobal(rows, driveFolderUrl = '') {
         const rowStyle = `cursor:${hasDetalle ? 'pointer' : 'default'};${deliveryAlerta ? 'background:rgba(239,68,68,0.05)' : ''}`;
 
         html += `<tr class="vg-main-row"
+            data-sort-key="${factura.id}"
+            data-sort-numero="${factura.numero}"
+            data-sort-cliente="${clienteNombre}"
+            data-sort-showroom="${showroom ? showroom.nombre : ''}"
+            data-sort-envio="${factura.fechaEnvio || factura.fecha || ''}"
+            data-sort-vencimiento="${factura.vencimiento || factura.fechaVencimiento || ''}"
+            data-sort-importe="${importeAbs}"
+            data-sort-cobrado="${totalCobrado}"
+            data-sort-pendiente="${pendiente}"
+            data-sort-estado="${estado}"
+            data-sort-comision="${comision !== null ? comision : ''}"
             data-estado="${estado}"
             data-showroom="${showroomId}"
             data-buscar="${buscar}"
@@ -4968,7 +4979,7 @@ function ordenarTabla(tableBodyId, columna, tipo) {
         // For facturas, also move the detail row
         const detailRow = row.nextElementSibling;
         tbody.appendChild(row);
-        if (detailRow && detailRow.id && detailRow.id.startsWith('detalle-')) {
+        if (detailRow && detailRow.id && (detailRow.id.startsWith('detalle-') || detailRow.id.endsWith('-detalle'))) {
             tbody.appendChild(detailRow);
         }
     });
