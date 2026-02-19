@@ -16,7 +16,12 @@ const db = firebase.firestore();
 const auth = firebase.auth();
 
 // Secondary app instance for creating users without signing out admin
-const secondaryApp = firebase.initializeApp(firebaseConfig, 'secondary');
+let secondaryApp;
+try {
+    secondaryApp = firebase.app('secondary');
+} catch (e) {
+    secondaryApp = firebase.initializeApp(firebaseConfig, 'secondary');
+}
 const secondaryAuth = secondaryApp.auth();
 
 console.log("Firebase inicializado correctamente - Proyecto: comisiones-app-33035");
