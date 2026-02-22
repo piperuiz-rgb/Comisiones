@@ -1459,66 +1459,6 @@ function guardarPedido() {
     showAlert('pedidosAlert', `Pedido ${editandoId ? 'actualizado' : 'creado'} correctamente`, 'success');
 }
 
-function cargarTablaPedidos() {
-    const pedidos = DB.getPedidos();
-    const clientes = DB.getClientes();
-    const container = document.getElementById('pedidosTable');
-    
-    if (pedidos.length === 0) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <div class="empty-icon">P</div>
-                <p>No hay pedidos registrados</p>
-                <p style="font-size: 14px; margin-top: 8px;">Crea uno nuevo o importa desde Excel</p>
-            </div>
-        `;
-        return;
-    }
-    
-    let html = '<table><thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th>Importe</th><th>Acciones</th></tr></thead><tbody>';
-    
-    pedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).forEach(ped => {
-        const cliente = clientes.find(c => c.id === ped.clienteId);
-        html += `
-            <tr>
-                <td><strong>${ped.numero}</strong></td>
-                <td>${cliente ? cliente.nombre : '-'}</td>
-                <td>${formatDate(ped.fecha)}</td>
-                <td>${formatCurrency(ped.importe, ped.moneda)}</td>
-                <td>
-                    <div class="actions">
-                        <button class="btn btn-secondary btn-icon" onclick="modalPedido('${ped.id}')" title="Editar">Edit</button>
-                        <button class="btn btn-danger btn-icon" onclick="eliminarPedido('${ped.id}')" title="Eliminar">Del</button>
-                    </div>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += '</tbody></table>';
-    container.innerHTML = html;
-}
-
-function eliminarPedido(id) {
-    const pedido = DB.getPedidos().find(p => p.id === id);
-    const cobrosAnticipo = DB.getCobros().filter(c => c.pedidoId === id);
-
-    let msg = '¿Eliminar este pedido?';
-    if (cobrosAnticipo.length > 0) {
-        msg += `\n\nTiene ${cobrosAnticipo.length} anticipo(s) asociado(s) que también se eliminarán.`;
-    }
-
-    if (!confirm(msg)) return;
-
-    if (cobrosAnticipo.length > 0) {
-        const cobroIds = new Set(cobrosAnticipo.map(c => c.id));
-        DB.setCobros(DB.getCobros().filter(c => !cobroIds.has(c.id)));
-    }
-    DB.setPedidos(DB.getPedidos().filter(p => p.id !== id));
-    cargarTablaPedidos();
-    showAlert('pedidosAlert', 'Pedido eliminado correctamente', 'success');
-}
-
 function importarPedidos(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1527,7 +1467,7 @@ function importarPedidos(file) {
             const workbook = XLSX.read(data, { type: 'array' });
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            
+
             const pedidos = DB.getPedidos();
             const clientes = DB.getClientes();
             let importados = 0;
@@ -2372,10 +2312,11 @@ function cargarTablaPedidos() {
             creditoHtml = `<button class="btn btn-primary" style="font-size:11px;padding:3px 8px" onclick="solicitarCreditoDesdePedido('${pedido.id}')">Solicitar</button>`;
         }
 
-        // Find related facturas and cobros for expand row
+        // Find related facturas and cobros for expand row (support both field names)
         const facturasRelacionadas = facturas.filter(f => {
-            if (!f.pedidos) return false;
-            const refs = f.pedidos.split(',').map(r => r.trim().toLowerCase());
+            const pedRef = f.pedidos || f.pedidosOrigen || '';
+            if (!pedRef) return false;
+            const refs = pedRef.split(',').map(r => r.trim().toLowerCase());
             return refs.includes(pedido.numero.toLowerCase());
         });
         const cobrosAnticipo = cobros.filter(c => c.pedidoId === pedido.id && !c.facturaId);
