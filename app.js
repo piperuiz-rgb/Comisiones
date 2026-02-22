@@ -2289,13 +2289,15 @@ function cargarTablaPedidos() {
     const pedidos = DB.getPedidos();
     const clientes = DB.getClientes();
     const showrooms = DB.getShowrooms();
+    const facturas = DB.getFacturas();
+    const cobros = DB.getCobros();
     const container = document.getElementById('pedidosTable');
-    
+
     if (pedidos.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="empty-icon">P</div><p>No hay pedidos registrados</p></div>';
         return;
     }
-    
+
     let html = `<div class="filter-bar">
         <input type="text" id="buscarPedido" placeholder="Buscar pedido...">
         <select id="filtroClientePedido">
@@ -2336,8 +2338,6 @@ function cargarTablaPedidos() {
         const showroom = cliente ? showrooms.find(s => s.id === cliente.showroomId) : null;
 
         // Payment terms info
-        const anticipoPct = getAnticipoPct(pedido);
-        const importeCredito = getImporteCredito(pedido);
         const condLabel = getCondicionesLabel(pedido);
 
         // Order status badge
@@ -2352,44 +2352,134 @@ function cargarTablaPedidos() {
         const estado = pedido.estadoPedido || 'confirmado';
         const estadoHtml = `<span class="badge badge-${estadoBadges[estado] || 'secondary'}">${estadoLabels[estado] || estado}</span>`;
 
-        // Shipping info
+        // Shipping info - single line
         let envioHtml = '-';
         if (pedido.metodoEnvio || pedido.trackingNumber) {
-            envioHtml = '';
-            if (pedido.metodoEnvio) envioHtml += `<small>${pedido.metodoEnvio}</small>`;
-            if (pedido.trackingNumber) envioHtml += `${pedido.metodoEnvio ? '<br>' : ''}<code style="font-size:11px">${pedido.trackingNumber}</code>`;
+            const parts = [];
+            if (pedido.metodoEnvio) parts.push(pedido.metodoEnvio);
+            if (pedido.trackingNumber) parts.push(`<code style="font-size:11px">${pedido.trackingNumber}</code>`);
+            envioHtml = parts.join(' &middot; ');
         }
 
-        // Credit status
+        // Credit status - single line badge only
         const solicitud = solicitudes.find(s => s.pedidoId === pedido.id);
         let creditoHtml = '';
         if (solicitud) {
             const badges = { pendiente: 'warning', enviada: 'primary', aprobada: 'success', rechazada: 'danger' };
             const badge = badges[solicitud.estado] || 'secondary';
             creditoHtml = `<span class="badge badge-${badge}" style="cursor:pointer" onclick="modalSolicitudCredito('${solicitud.id}')" title="Click para ver/editar">${solicitud.estado}</span>`;
-            if (solicitud.estado === 'aprobada' && solicitud.limiteCredito) {
-                creditoHtml += `<br><small style="color:var(--success)">${formatCurrency(solicitud.limiteCredito, solicitud.moneda || pedido.moneda)}</small>`;
-            } else if (anticipoPct > 0) {
-                creditoHtml += `<br><small>${formatCurrency(solicitud.importeCredito != null ? solicitud.importeCredito : importeCredito, pedido.moneda)}</small>`;
-            }
         } else {
-            if (anticipoPct > 0) {
-                creditoHtml = `<small style="color:var(--text-secondary);display:block;margin-bottom:4px">${formatCurrency(importeCredito, pedido.moneda)}</small>`;
-            }
-            creditoHtml += `<button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onclick="solicitarCreditoDesdePedido('${pedido.id}')">Solicitar</button>`;
+            creditoHtml = `<button class="btn btn-primary" style="font-size:11px;padding:3px 8px" onclick="solicitarCreditoDesdePedido('${pedido.id}')">Solicitar</button>`;
+        }
+
+        // Find related facturas and cobros for expand row
+        const facturasRelacionadas = facturas.filter(f => {
+            if (!f.pedidos) return false;
+            const refs = f.pedidos.split(',').map(r => r.trim().toLowerCase());
+            return refs.includes(pedido.numero.toLowerCase());
+        });
+        const cobrosAnticipo = cobros.filter(c => c.pedidoId === pedido.id && !c.facturaId);
+        const hasDetails = facturasRelacionadas.length > 0 || cobrosAnticipo.length > 0;
+
+        // Build expand detail content
+        let detalleHtml = '';
+
+        if (facturasRelacionadas.length > 0) {
+            detalleHtml += `
+                <div style="margin-bottom:16px">
+                    <div style="font-weight:600;margin-bottom:8px;color:var(--text-primary)">Facturas asociadas</div>
+                    <table style="width:100%;background:white;border-radius:6px;border:1px solid var(--border-color)">
+                        <thead>
+                            <tr style="background:var(--gray-100)">
+                                <th style="padding:8px 12px;text-align:left;font-weight:600">N&ordm; Factura</th>
+                                <th style="padding:8px 12px;text-align:left;font-weight:600">Fecha</th>
+                                <th style="padding:8px 12px;text-align:right;font-weight:600">Importe</th>
+                                <th style="padding:8px 12px;text-align:center;font-weight:600">Estado</th>
+                                <th style="padding:8px 12px;text-align:right;font-weight:600">Cobrado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${facturasRelacionadas.map(f => {
+                                const cobrosF = cobros.filter(c => c.facturaId === f.id).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+                                const estadoF = calcularEstadoFactura(f.id);
+                                const estadoTexto = estadoF.cobrado >= Math.abs(f.importe) ? 'cobrada' : estadoF.cobrado > 0 ? 'parcial' : 'pendiente';
+                                const estadoBadgeMap = { pendiente: 'warning', parcial: 'primary', cobrada: 'success' };
+                                const estadoLabelMap = { pendiente: 'Pendiente', parcial: 'Parcial', cobrada: 'Cobrada' };
+                                return `
+                                    <tr style="border-top:1px solid var(--border-color)">
+                                        <td style="padding:8px 12px"><strong>${f.numero}</strong>${f.esAbono ? ' <span class="badge badge-info" style="font-size:10px">Abono</span>' : ''}</td>
+                                        <td style="padding:8px 12px">${formatDate(f.fecha)}</td>
+                                        <td style="padding:8px 12px;text-align:right">${formatCurrency(f.importe, f.moneda)}</td>
+                                        <td style="padding:8px 12px;text-align:center"><span class="badge badge-${estadoBadgeMap[estadoTexto]}">${estadoLabelMap[estadoTexto]}</span></td>
+                                        <td style="padding:8px 12px;text-align:right;color:var(--success);font-weight:600">${formatCurrency(estadoF.cobrado, f.moneda)}</td>
+                                    </tr>
+                                    ${cobrosF.map(c => `
+                                        <tr style="background:var(--gray-50)">
+                                            <td style="padding:4px 12px 4px 28px;color:var(--text-secondary);font-size:13px" colspan="2">&#8627; ${formatDate(c.fecha)}${c.esAjuste ? ' <span class="badge badge-info" style="font-size:10px">Ajuste</span>' : ''}</td>
+                                            <td style="padding:4px 12px;text-align:right;color:var(--success);font-size:13px">${formatCurrency(c.importe, c.moneda)}</td>
+                                            <td colspan="2"></td>
+                                        </tr>
+                                    `).join('')}
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        if (cobrosAnticipo.length > 0) {
+            const totalAnticipo = cobrosAnticipo.reduce((sum, c) => sum + c.importe, 0);
+            detalleHtml += `
+                <div>
+                    <div style="font-weight:600;margin-bottom:8px;color:var(--text-primary)">Anticipos s/pedido</div>
+                    <table style="width:100%;background:white;border-radius:6px;border:1px solid var(--border-color)">
+                        <thead>
+                            <tr style="background:var(--gray-100)">
+                                <th style="padding:8px 12px;text-align:left;font-weight:600">Fecha</th>
+                                <th style="padding:8px 12px;text-align:right;font-weight:600">Importe</th>
+                                <th style="padding:8px 12px;text-align:left;font-weight:600">Notas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${cobrosAnticipo.sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).map(c => `
+                                <tr style="border-top:1px solid var(--border-color)">
+                                    <td style="padding:8px 12px">${formatDate(c.fecha)}</td>
+                                    <td style="padding:8px 12px;text-align:right;color:var(--success)">${formatCurrency(c.importe, c.moneda)}</td>
+                                    <td style="padding:8px 12px;color:var(--text-secondary)">${c.notas || '-'}</td>
+                                </tr>
+                            `).join('')}
+                            <tr style="border-top:2px solid var(--border-color)">
+                                <td style="padding:8px 12px;font-weight:600">Total anticipos</td>
+                                <td style="padding:8px 12px;text-align:right;color:var(--success);font-weight:600">${formatCurrency(totalAnticipo, pedido.moneda)}</td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        if (!hasDetails) {
+            detalleHtml = '<span style="color:var(--text-secondary);font-size:13px">Sin facturas ni anticipos registrados</span>';
         }
 
         html += `
-            <tr data-sort-key="1" data-sort-numero="${pedido.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${pedido.fecha}" data-sort-importe="${pedido.importe}" data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}" data-joorpo="${(pedido.joorPO || '').toLowerCase()}" data-estado="${estado}">
-                <td><strong>${pedido.numero}</strong></td>
-                <td>${pedido.joorPO || '-'}</td>
+            <tr data-sort-key="1" data-sort-numero="${pedido.numero}" data-sort-cliente="${cliente ? cliente.nombre : ''}" data-sort-showroom="${showroom ? showroom.nombre : ''}" data-sort-fecha="${pedido.fecha}" data-sort-importe="${pedido.importe}" data-cliente="${pedido.clienteId}" data-showroom="${showroom ? showroom.id : ''}" data-numero="${pedido.numero.toLowerCase()}" data-joorpo="${(pedido.joorPO || '').toLowerCase()}" data-estado="${estado}" data-pedido-id="${pedido.id}" data-pedido-row="1">
+                <td style="white-space:nowrap">
+                    <span style="cursor:pointer;display:inline-flex;align-items:center;gap:5px" onclick="toggleDetallePedido('${pedido.id}')">
+                        <span id="chevron-${pedido.id}" style="font-size:9px;transition:transform 0.2s;display:inline-block;color:var(--text-secondary)">&#9654;</span>
+                        <strong>${pedido.numero}</strong>
+                    </span>
+                </td>
+                <td style="white-space:nowrap">${pedido.joorPO || '-'}</td>
                 <td>${cliente ? cliente.nombre : '-'}</td>
                 <td>${showroom ? showroom.nombre : '-'}</td>
-                <td>${formatDate(pedido.fecha)}</td>
-                <td>${formatCurrency(pedido.importe, pedido.moneda)}${pedido.condicionesPago ? `<br><small style="color:var(--text-secondary)">${condLabel}</small>` : ''}</td>
-                <td style="text-align:center">${estadoHtml}</td>
-                <td>${envioHtml}</td>
-                <td style="text-align:center">${creditoHtml}</td>
+                <td style="white-space:nowrap">${formatDate(pedido.fecha)}</td>
+                <td style="white-space:nowrap">${formatCurrency(pedido.importe, pedido.moneda)}${pedido.condicionesPago ? ` <small style="color:var(--text-secondary)">${condLabel}</small>` : ''}</td>
+                <td style="text-align:center;white-space:nowrap">${estadoHtml}</td>
+                <td style="white-space:nowrap">${envioHtml}</td>
+                <td style="text-align:center;white-space:nowrap">${creditoHtml}</td>
                 <td>
                     <div class="actions">
                         <button class="btn btn-secondary btn-icon" onclick="modalPedido('${pedido.id}')">Edit</button>
@@ -2397,12 +2487,17 @@ function cargarTablaPedidos() {
                     </div>
                 </td>
             </tr>
+            <tr id="detalle-pedido-${pedido.id}" style="display:none" data-detail-row="1">
+                <td colspan="10" style="background:var(--gray-50);padding:16px 24px;border-top:none">
+                    ${detalleHtml}
+                </td>
+            </tr>
         `;
     });
-    
+
     html += '</tbody></table>';
     container.innerHTML = html;
-    
+
     // Event listeners
     document.getElementById('buscarPedido').addEventListener('input', filtrarPedidos);
     document.getElementById('filtroClientePedido').addEventListener('change', filtrarPedidos);
@@ -2416,7 +2511,7 @@ function filtrarPedidos() {
     const showroomFiltro = document.getElementById('filtroShowroomPedido').value;
     const estadoFiltro = document.getElementById('filtroEstadoPedido').value;
 
-    const filas = document.querySelectorAll('#pedidosTableBody tr');
+    const filas = document.querySelectorAll('#pedidosTableBody tr[data-pedido-row="1"]');
 
     filas.forEach(fila => {
         const numero = fila.getAttribute('data-numero');
@@ -2424,16 +2519,20 @@ function filtrarPedidos() {
         const cliente = fila.getAttribute('data-cliente');
         const showroom = fila.getAttribute('data-showroom');
         const estado = fila.getAttribute('data-estado');
+        const pedidoId = fila.getAttribute('data-pedido-id');
 
         const coincideBusqueda = numero.includes(busqueda) || joorpo.includes(busqueda);
         const coincideCliente = !clienteFiltro || cliente === clienteFiltro;
         const coincideShowroom = !showroomFiltro || showroom === showroomFiltro;
         const coincideEstado = !estadoFiltro || estado === estadoFiltro;
 
-        if (coincideBusqueda && coincideCliente && coincideShowroom && coincideEstado) {
-            fila.style.display = '';
-        } else {
-            fila.style.display = 'none';
+        const visible = coincideBusqueda && coincideCliente && coincideShowroom && coincideEstado;
+        fila.style.display = visible ? '' : 'none';
+
+        // Hide detail row when parent is hidden
+        if (pedidoId) {
+            const detalleRow = document.getElementById(`detalle-pedido-${pedidoId}`);
+            if (detalleRow && !visible) detalleRow.style.display = 'none';
         }
     });
 }
@@ -2876,6 +2975,19 @@ function toggleDetalleCobros(facturaId) {
         detalle.style.display = 'table-row';
     } else {
         detalle.style.display = 'none';
+    }
+}
+
+function toggleDetallePedido(pedidoId) {
+    const detalle = document.getElementById(`detalle-pedido-${pedidoId}`);
+    const chevron = document.getElementById(`chevron-${pedidoId}`);
+    if (!detalle) return;
+    if (detalle.style.display === 'none') {
+        detalle.style.display = 'table-row';
+        chevron.style.transform = 'rotate(90deg)';
+    } else {
+        detalle.style.display = 'none';
+        chevron.style.transform = 'rotate(0deg)';
     }
 }
 
