@@ -2982,13 +2982,9 @@ function toggleDetallePedido(pedidoId) {
     const detalle = document.getElementById(`detalle-pedido-${pedidoId}`);
     const chevron = document.getElementById(`chevron-${pedidoId}`);
     if (!detalle) return;
-    if (detalle.style.display === 'none') {
-        detalle.style.display = 'table-row';
-        chevron.style.transform = 'rotate(90deg)';
-    } else {
-        detalle.style.display = 'none';
-        chevron.style.transform = 'rotate(0deg)';
-    }
+    const isOpen = detalle.style.display !== 'none';
+    detalle.style.display = isOpen ? 'none' : '';
+    if (chevron) chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
 }
 
 function filtrarFacturas() {
