@@ -4960,6 +4960,7 @@ window.addEventListener('beforeunload', function() {
 // ========================================
 
 function cargarTablaHilldun() {
+    actualizarSftpQuickInfo(DB.getHilldunConfig());
     const solicitudes = DB.getSolicitudesCredito();
     const pedidos = DB.getPedidos();
     const clientes = DB.getClientes();
@@ -5366,6 +5367,11 @@ function toggleConfigHilldun() {
 
 function cargarHilldunConfig() {
     const config = DB.getHilldunConfig();
+    document.getElementById('hcSftpHost').value = config.sftpHost || '';
+    document.getElementById('hcSftpUser').value = config.sftpUser || '';
+    document.getElementById('hcSftpPassword').value = config.sftpPassword || '';
+    document.getElementById('hcSftpInbound').value = config.sftpInbound || '/inbound';
+    document.getElementById('hcSftpOutbound').value = config.sftpOutbound || '/outbound';
     document.getElementById('hcClientCodeEUR').value = config.clientCodeEUR || '';
     document.getElementById('hcClientCodeUSD').value = config.clientCodeUSD || '';
     document.getElementById('hcTermsCode').value = config.termsCode || '';
@@ -5377,6 +5383,11 @@ function cargarHilldunConfig() {
 
 function guardarHilldunConfig() {
     const config = {
+        sftpHost: document.getElementById('hcSftpHost').value.trim(),
+        sftpUser: document.getElementById('hcSftpUser').value.trim(),
+        sftpPassword: document.getElementById('hcSftpPassword').value.trim(),
+        sftpInbound: document.getElementById('hcSftpInbound').value.trim() || '/inbound',
+        sftpOutbound: document.getElementById('hcSftpOutbound').value.trim() || '/outbound',
         clientCodeEUR: document.getElementById('hcClientCodeEUR').value.trim(),
         clientCodeUSD: document.getElementById('hcClientCodeUSD').value.trim(),
         termsCode: document.getElementById('hcTermsCode').value.trim(),
@@ -5386,7 +5397,19 @@ function guardarHilldunConfig() {
         ediTradingPartner: document.getElementById('hcEdiTradingPartner').value
     };
     DB.setHilldunConfig(config);
+    actualizarSftpQuickInfo(config);
     showAlert('hilldunAlert', 'Configuracion Hilldun guardada correctamente', 'success');
+}
+
+function actualizarSftpQuickInfo(config) {
+    const el = document.getElementById('sftpQuickInfo');
+    if (!el) return;
+    if (config && config.sftpHost) {
+        el.textContent = 'Servidor: ' + config.sftpHost + ' | Usuario: ' + config.sftpUser +
+            ' | Inbound: ' + (config.sftpInbound || '/inbound') + ' | Outbound: ' + (config.sftpOutbound || '/outbound');
+    } else {
+        el.textContent = 'Configura los datos SFTP arriba para ver el resumen de conexion.';
+    }
 }
 
 // ========================================

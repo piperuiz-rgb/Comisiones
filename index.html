@@ -306,14 +306,41 @@
                     <button class="btn btn-secondary" onclick="toggleConfigHilldun()">Mostrar/Ocultar</button>
                 </div>
                 <div id="hilldunConfigPanel" style="display:none;">
+                    <h4 style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Conexion SFTP</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcSftpHost">Host SFTP</label>
+                            <input type="text" id="hcSftpHost" placeholder="Ej: ftp.hilldun.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcSftpUser">Usuario SFTP</label>
+                            <input type="text" id="hcSftpUser" placeholder="Ej: CHRO">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcSftpPassword">Password SFTP</label>
+                            <input type="password" id="hcSftpPassword" placeholder="********">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcSftpInbound">Carpeta Inbound (subida)</label>
+                            <input type="text" id="hcSftpInbound" placeholder="Ej: /inbound">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcSftpOutbound">Carpeta Outbound (respuestas)</label>
+                            <input type="text" id="hcSftpOutbound" placeholder="Ej: /outbound">
+                        </div>
+                    </div>
+                    <hr style="margin: 16px 0; border: none; border-top: 1px solid #e5e7eb;">
+                    <h4 style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Client Codes y Terminos</h4>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="hcClientCodeEUR">Client Code EUR</label>
-                            <input type="text" id="hcClientCodeEUR" placeholder="Ej: CHAR">
+                            <input type="text" id="hcClientCodeEUR" placeholder="Ej: ECHR">
                         </div>
                         <div class="form-group">
                             <label for="hcClientCodeUSD">Client Code USD</label>
-                            <input type="text" id="hcClientCodeUSD" placeholder="Ej: UCHAR">
+                            <input type="text" id="hcClientCodeUSD" placeholder="Ej: CHRO">
                         </div>
                     </div>
                     <div class="form-row">
@@ -352,8 +379,16 @@
                 <div class="card-header">
                     <div class="card-header-left">
                         <div class="card-icon">&#128196;</div>
-                        <div class="card-title">Intercambio CSV con Hilldun</div>
+                        <div class="card-title">Intercambio CSV con Hilldun (via SFTP)</div>
                     </div>
+                </div>
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #0c4a6e;">
+                    <strong>Flujo SFTP:</strong>
+                    1) Genera los CSV abajo &rarr;
+                    2) Sube los ficheros a la carpeta <code>inbound</code> del servidor SFTP &rarr;
+                    3) Descarga las respuestas de la carpeta <code>outbound</code> &rarr;
+                    4) Importa el CSV de respuestas aqui.
+                    <span id="sftpQuickInfo" style="display: block; margin-top: 6px; color: #475569;"></span>
                 </div>
                 <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                     <button class="btn btn-primary" onclick="generarCSVCreditRequests()">Generar CSV Solicitudes Credito</button>
