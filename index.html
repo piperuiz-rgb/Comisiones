@@ -12,33 +12,70 @@
     <header>
         <div class="header-content">
             <div>
-                <div class="logo-text"><span class="logo-accent">◆</span> Charo Ruiz Ibiza</div>
+                <div class="logo-text"><span class="logo-accent">&#9670;</span> Charo Ruiz Ibiza</div>
                 <div class="header-subtitle">Sistema de Comisiones de Showrooms</div>
+            </div>
+            <div class="actions">
+                <input type="file" id="importBackupInput" accept=".json" style="display:none">
+                <button class="btn btn-secondary" onclick="exportarBackup()" title="Exportar copia de seguridad">&darr; Backup</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('importBackupInput').click()" title="Restaurar desde copia de seguridad">&uarr; Restaurar</button>
+                <button class="btn btn-secondary" onclick="restaurarAutoBackup()" title="Restaurar &uacute;ltima copia autom&aacute;tica">Auto-Backup</button>
             </div>
         </div>
     </header>
 
-    <div class="container">
-        <h1>Gestión de Comisiones</h1>
-        <p class="subtitle">Control completo de pedidos, facturas y comisiones de showrooms</p>
-
-        <div class="nav-tabs">
-            <button class="nav-tab active" onclick="switchTab('dashboard')">⚠️ Pendientes</button>
-            <button class="nav-tab" onclick="switchTab('showrooms')">🏢 Showrooms</button>
-            <button class="nav-tab" onclick="switchTab('clientes')">👥 Clientes</button>
-            <button class="nav-tab" onclick="switchTab('pedidos')">📦 Pedidos</button>
-            <button class="nav-tab" onclick="switchTab('facturas')">📄 Facturas</button>
-            <button class="nav-tab" onclick="switchTab('cobros')">💰 Cobros</button>
-            <button class="nav-tab" onclick="switchTab('informes')">📈 Informes</button>
-            <button class="nav-tab" onclick="switchTab('historico')">📜 Histórico Informes</button>
+    <div id="mainApp" class="container">
+        <!-- Barra de búsqueda global -->
+        <div style="margin-bottom: 24px;">
+            <input type="text" id="busquedaGlobal" placeholder="Buscar en todo el sistema (facturas, pedidos, clientes, showrooms)..." style="width: 100%; padding: 12px 16px; font-size: 14px;" oninput="busquedaGlobalHandler()">
+            <div id="resultadosBusqueda" style="display:none;"></div>
         </div>
 
-        <!-- TAB: FACTURAS PENDIENTES -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="nav-tab" onclick="switchTab('showrooms')">Showrooms</button>
+            <button class="nav-tab" onclick="switchTab('clientes')">Clientes</button>
+            <button class="nav-tab" onclick="switchTab('pedidos')">Pedidos</button>
+            <button class="nav-tab" onclick="switchTab('facturas')">Facturas</button>
+            <button class="nav-tab" onclick="switchTab('cobros')">Cobros</button>
+            <button class="nav-tab" onclick="switchTab('informes')">Informes</button>
+            <button class="nav-tab" onclick="switchTab('liquidaciones')">Liquidaciones</button>
+            <button class="nav-tab" onclick="switchTab('historico')">Hist&oacute;rico</button>
+            <button class="nav-tab" onclick="switchTab('hilldun')">Hilldun Cr&eacute;dito</button>
+        </div>
+
+        <!-- TAB: DASHBOARD -->
         <div id="tab-dashboard" class="tab-content active">
+            <div id="alertasVencimiento" style="display:none;"></div>
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Comisiones Proyectadas -->
+            <div class="card" id="comisionesProyectadasCard">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">$</div>
+                        <div class="card-title">Comisiones Proyectadas</div>
+                    </div>
+                </div>
+                <div id="comisionesProyectadasContainer"></div>
+            </div>
+
+            <!-- Informe de Antigüedad de Deuda -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">⚠️</div>
+                        <div class="card-icon">A</div>
+                        <div class="card-title">Antig&uuml;edad de Deuda</div>
+                    </div>
+                </div>
+                <div id="agingReportContainer"></div>
+            </div>
+
+            <!-- Facturas Pendientes de Cobro -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">!</div>
                         <div class="card-title">Facturas Pendientes de Cobro</div>
                     </div>
                 </div>
@@ -51,22 +88,13 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">🏢</div>
+                        <div class="card-icon">S</div>
                         <div class="card-title">Showrooms</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalShowroom()">
-                            <span>+</span>
-                            <span>Nuevo Showroom</span>
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportarShowrooms()">
-                            <span>↓</span>
-                            <span>Exportar</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importShowroomsInput').click()">
-                            <span>↑</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalShowroom()">+ Nuevo Showroom</button>
+                        <button class="btn btn-secondary" onclick="exportarShowrooms()">&darr; Exportar</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importShowroomsInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importShowroomsInput" accept=".xlsx,.csv" style="display:none">
@@ -80,22 +108,13 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">👥</div>
+                        <div class="card-icon">C</div>
                         <div class="card-title">Clientes</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalCliente()">
-                            <span>+</span>
-                            <span>Nuevo Cliente</span>
-                        </button>
-                        <button class="btn btn-secondary" onclick="exportarClientes()">
-                            <span>↓</span>
-                            <span>Exportar</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importClientesInput').click()">
-                            <span>↑</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalCliente()">+ Nuevo Cliente</button>
+                        <button class="btn btn-secondary" onclick="exportarClientes()">&darr; Exportar</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importClientesInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importClientesInput" accept=".xlsx,.csv" style="display:none">
@@ -109,18 +128,13 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📦</div>
+                        <div class="card-icon">P</div>
                         <div class="card-title">Pedidos</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalPedido()">
-                            <span>+</span>
-                            <span>Nuevo Pedido</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">
-                            <span>↑</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalPedido()">+ Nuevo Pedido</button>
+                        <button class="btn btn-secondary" onclick="exportarPedidos()">&darr; Exportar</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importPedidosInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importPedidosInput" accept=".xlsx,.csv" style="display:none">
@@ -134,18 +148,12 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📄</div>
+                        <div class="card-icon">F</div>
                         <div class="card-title">Facturas</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalFactura()">
-                            <span>+</span>
-                            <span>Nueva Factura</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importFacturasInput').click()">
-                            <span>↑</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalFactura()">+ Nueva Factura</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importFacturasInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importFacturasInput" accept=".xlsx,.csv" style="display:none">
@@ -159,18 +167,12 @@
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">💰</div>
+                        <div class="card-icon">$</div>
                         <div class="card-title">Cobros</div>
                     </div>
                     <div class="actions">
-                        <button class="btn btn-success" onclick="modalCobro()">
-                            <span>+</span>
-                            <span>Nuevo Cobro</span>
-                        </button>
-                        <button class="btn btn-primary" onclick="document.getElementById('importCobrosInput').click()">
-                            <span>↑</span>
-                            <span>Importar</span>
-                        </button>
+                        <button class="btn btn-success" onclick="modalCobro()">+ Nuevo Cobro</button>
+                        <button class="btn btn-primary" onclick="document.getElementById('importCobrosInput').click()">&uarr; Importar</button>
                     </div>
                 </div>
                 <input type="file" id="importCobrosInput" accept=".xlsx,.csv" style="display:none">
@@ -181,14 +183,14 @@
 
         <!-- TAB: INFORMES -->
         <div id="tab-informes" class="tab-content">
+            <!-- Informe de Comisiones -->
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📈</div>
-                        <div class="card-title">Generar Informe de Comisiones</div>
+                        <div class="card-icon">R</div>
+                        <div class="card-title">Informe de Comisiones</div>
                     </div>
                 </div>
-
                 <div class="form-row">
                     <div class="form-group">
                         <label for="infFechaInicio">Fecha Inicio (fecha cobro)</label>
@@ -199,64 +201,258 @@
                         <input type="date" id="infFechaFin">
                     </div>
                 </div>
-
                 <div class="form-group">
                     <label for="infShowroom">Showroom (Opcional)</label>
                     <select id="infShowroom">
                         <option value="">Todos los showrooms</option>
                     </select>
                 </div>
-
-                <button class="btn btn-primary" onclick="generarInforme()">
-                    <span>📊</span>
-                    <span>Generar Informe Excel</span>
-                </button>
-
+                <button class="btn btn-primary" onclick="generarInforme()">Generar Informe Excel</button>
                 <div id="infPreview" class="table-container" style="display:none; margin-top:24px"></div>
+            </div>
+
+            <!-- Comparativa entre Periodos -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">VS</div>
+                        <div class="card-title">Comparativa entre Periodos</div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Periodo 1 - Inicio</label>
+                        <input type="date" id="cmpInicio1">
+                    </div>
+                    <div class="form-group">
+                        <label>Periodo 1 - Fin</label>
+                        <input type="date" id="cmpFin1">
+                    </div>
+                    <div class="form-group">
+                        <label>Periodo 2 - Inicio</label>
+                        <input type="date" id="cmpInicio2">
+                    </div>
+                    <div class="form-group">
+                        <label>Periodo 2 - Fin</label>
+                        <input type="date" id="cmpFin2">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="generarComparativa()">Generar Comparativa</button>
+                <div id="comparativaResultado" style="margin-top: 20px;"></div>
+            </div>
+
+            <!-- Extracto por Cliente -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">E</div>
+                        <div class="card-title">Extracto por Cliente</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="extCliente">Cliente</label>
+                    <select id="extCliente">
+                        <option value="">Seleccionar cliente...</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="generarExtractoCliente()">Ver Extracto</button>
+                <div id="extractoResultado" style="margin-top: 20px;"></div>
             </div>
         </div>
 
-        <!-- TAB: HISTÓRICO INFORMES -->
+        <!-- TAB: LIQUIDACIONES -->
+        <div id="tab-liquidaciones" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">L</div>
+                        <div class="card-title">Liquidaciones de Comisiones</div>
+                    </div>
+                    <button class="btn btn-success" onclick="modalLiquidacion()">+ Nueva Liquidaci&oacute;n</button>
+                </div>
+                <div class="alert alert-info" id="liquidacionesAlert"></div>
+                <div class="table-container" id="liquidacionesTable"></div>
+            </div>
+        </div>
+
+        <!-- TAB: HISTORICO INFORMES -->
         <div id="tab-historico" class="tab-content">
             <div class="card">
                 <div class="card-header">
                     <div class="card-header-left">
-                        <div class="card-icon">📜</div>
-                        <div class="card-title">Histórico de Informes</div>
+                        <div class="card-icon">H</div>
+                        <div class="card-title">Hist&oacute;rico de Informes</div>
                     </div>
-                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar histórico">
-                        🗑️
-                    </button>
+                    <button class="btn btn-danger btn-icon" onclick="limpiarHistoricoInformes()" title="Limpiar hist&oacute;rico">&times;</button>
                 </div>
-
                 <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
-                    <input type="text" id="buscarHistorico" placeholder="🔍 Buscar en histórico..." style="flex: 1; min-width: 200px;">
+                    <input type="text" id="buscarHistorico" placeholder="Buscar en hist&oacute;rico..." style="flex: 1; min-width: 200px;">
                     <select id="filtroShowroomHistorico" style="min-width: 200px;">
                         <option value="">Todos los showrooms</option>
                     </select>
                 </div>
-
                 <div id="historicoInformesContainer"></div>
             </div>
         </div>
+        <!-- TAB: HILLDUN CREDITO -->
+        <div id="tab-hilldun" class="tab-content">
+            <!-- Configuracion Hilldun -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">&#9881;</div>
+                        <div class="card-title">Configuracion Hilldun</div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="toggleConfigHilldun()">Mostrar/Ocultar</button>
+                </div>
+                <div id="hilldunConfigPanel" style="display:none;">
+                    <h4 style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Conexion SFTP</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcSftpHost">Host SFTP</label>
+                            <input type="text" id="hcSftpHost" placeholder="Ej: ftp.hilldun.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcSftpUser">Usuario SFTP</label>
+                            <input type="text" id="hcSftpUser" placeholder="Ej: CHRO">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcSftpPassword">Password SFTP</label>
+                            <input type="password" id="hcSftpPassword" placeholder="********">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcSftpInbound">Carpeta Inbound (subida)</label>
+                            <input type="text" id="hcSftpInbound" placeholder="Ej: /inbound">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcSftpOutbound">Carpeta Outbound (respuestas)</label>
+                            <input type="text" id="hcSftpOutbound" placeholder="Ej: /outbound">
+                        </div>
+                    </div>
+                    <hr style="margin: 16px 0; border: none; border-top: 1px solid #e5e7eb;">
+                    <h4 style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Client Codes y Terminos</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcClientCodeEUR">Client Code EUR</label>
+                            <input type="text" id="hcClientCodeEUR" placeholder="Ej: ECHR">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcClientCodeUSD">Client Code USD</label>
+                            <input type="text" id="hcClientCodeUSD" placeholder="Ej: CHRO">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcTermsCode">Terms Code por defecto</label>
+                            <input type="text" id="hcTermsCode" placeholder="Ej: NET30">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcTermsDesc">Terms Description por defecto</label>
+                            <input type="text" id="hcTermsDesc" placeholder="Ej: NET 30">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcNetDays">Net Days por defecto</label>
+                            <input type="number" id="hcNetDays" value="30" min="0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="hcDefaultCarrier">Carrier/Transportista</label>
+                            <input type="text" id="hcDefaultCarrier" placeholder="Ej: DHL, UPS">
+                        </div>
+                        <div class="form-group">
+                            <label for="hcEdiTradingPartner">EDI Trading Partner</label>
+                            <select id="hcEdiTradingPartner">
+                                <option value="0">0 - Enviar PDF por correo</option>
+                                <option value="1">1 - No enviar PDF</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="guardarHilldunConfig()" style="margin-top: 8px;">Guardar Configuracion</button>
+                </div>
+            </div>
+
+            <!-- Acciones CSV Hilldun -->
+            <div class="card" style="margin-bottom: 20px;">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">&#128196;</div>
+                        <div class="card-title">Intercambio CSV con Hilldun (via SFTP)</div>
+                    </div>
+                </div>
+                <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; color: #0c4a6e;">
+                    <strong>Flujo SFTP:</strong>
+                    1) Genera los CSV abajo &rarr;
+                    2) Sube los ficheros a la carpeta <code>inbound</code> del servidor SFTP &rarr;
+                    3) Descarga las respuestas de la carpeta <code>outbound</code> &rarr;
+                    4) Importa el CSV de respuestas aqui.
+                    <span id="sftpQuickInfo" style="display: block; margin-top: 6px; color: #475569;"></span>
+                </div>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <button class="btn btn-primary" onclick="generarCSVCreditRequests()">Generar CSV Solicitudes Credito</button>
+                    <button class="btn btn-primary" onclick="generarCSVInvoices()">Generar CSV Facturas</button>
+                    <button class="btn btn-success" onclick="document.getElementById('importResponsesInput').click()">Importar CSV Respuestas Hilldun</button>
+                    <input type="file" id="importResponsesInput" accept=".csv" style="display:none">
+                </div>
+            </div>
+
+            <!-- Solicitudes de Credito -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-header-left">
+                        <div class="card-icon">H</div>
+                        <div class="card-title">Solicitudes de Credito</div>
+                    </div>
+                    <div class="actions">
+                        <button class="btn btn-success" onclick="modalSolicitudCredito()">+ Nueva Solicitud</button>
+                        <button class="btn btn-secondary" onclick="exportarSolicitudesCredito()">Exportar Excel</button>
+                    </div>
+                </div>
+                <div class="stats-grid" id="hilldunStats"></div>
+                <div class="alert alert-info" id="hilldunAlert"></div>
+                <div style="display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <input type="text" id="buscarSolicitud" placeholder="Buscar por pedido o cliente..." style="flex: 1; min-width: 200px;">
+                    <select id="filtroEstadoSolicitud" style="min-width: 180px;">
+                        <option value="">Todos los estados</option>
+                        <option value="pendiente">Pendiente</option>
+                        <option value="enviada">Enviada a Hilldun</option>
+                        <option value="aprobada">Aprobada</option>
+                        <option value="rechazada">Rechazada</option>
+                    </select>
+                </div>
+                <div class="table-container" id="hilldunTable"></div>
+            </div>
+        </div>
+
     </div>
 
     <!-- MODALES -->
-    
+
     <!-- Modal Showroom -->
     <div id="modalShowroom" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalShowroomTitle">Nuevo Showroom</h3>
-                <button class="modal-close" onclick="cerrarModal('modalShowroom')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalShowroom')">&times;</button>
             </div>
             <div class="form-group">
                 <label for="showNombre">Nombre del Showroom *</label>
                 <input type="text" id="showNombre" required>
             </div>
-            <div class="form-group">
-                <label for="showComision">% Comisión *</label>
-                <input type="number" id="showComision" step="0.01" min="0" max="100" required>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="showComision">% Comisi&oacute;n *</label>
+                    <input type="number" id="showComision" step="0.01" min="0" max="100" required>
+                </div>
+                <div class="form-group">
+                    <label for="showIdioma">Idioma del Informe *</label>
+                    <select id="showIdioma" required>
+                        <option value="es">Espa&ntilde;ol</option>
+                        <option value="en">English</option>
+                    </select>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalShowroom')">Cancelar</button>
@@ -270,7 +466,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalClienteTitle">Nuevo Cliente</h3>
-                <button class="modal-close" onclick="cerrarModal('modalCliente')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalCliente')">&times;</button>
             </div>
             <div class="form-group">
                 <label for="cliNombre">Nombre del Cliente *</label>
@@ -281,6 +477,65 @@
                 <select id="cliShowroom" required>
                     <option value="">Seleccionar showroom...</option>
                 </select>
+            </div>
+            <div style="border-top: 1px solid #E2E8F0; margin-top: 16px; padding-top: 12px;">
+                <button type="button" class="btn btn-secondary" style="width:100%;margin-bottom:12px;font-size:13px;" onclick="toggleHilldunFields()">
+                    Datos Facturacion (Hilldun) &#9660;
+                </button>
+                <div id="hilldunClienteFields" style="display:none;">
+                    <div class="form-group">
+                        <label for="cliCustomerCode">Codigo Cliente</label>
+                        <input type="text" id="cliCustomerCode" placeholder="Codigo interno del cliente">
+                    </div>
+                    <div class="form-group">
+                        <label for="cliAddress1">Direccion Linea 1</label>
+                        <input type="text" id="cliAddress1">
+                    </div>
+                    <div class="form-group">
+                        <label for="cliAddress2">Direccion Linea 2</label>
+                        <input type="text" id="cliAddress2">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliCity">Ciudad</label>
+                            <input type="text" id="cliCity">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliState">Estado/Provincia</label>
+                            <input type="text" id="cliState">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliZip">Codigo Postal</label>
+                            <input type="text" id="cliZip">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliCountry">Pais</label>
+                            <input type="text" id="cliCountry" placeholder="Ej: US, ES, GB">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliContact">Contacto</label>
+                            <input type="text" id="cliContact">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliPhone">Telefono</label>
+                            <input type="text" id="cliPhone">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cliEmail">Email</label>
+                            <input type="email" id="cliEmail">
+                        </div>
+                        <div class="form-group">
+                            <label for="cliVat">VAT / Registro Fiscal</label>
+                            <input type="text" id="cliVat">
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalCliente')">Cancelar</button>
@@ -294,11 +549,15 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalPedidoTitle">Nuevo Pedido</h3>
-                <button class="modal-close" onclick="cerrarModal('modalPedido')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalPedido')">&times;</button>
             </div>
             <div class="form-group">
-                <label for="pedNumero">Número de Pedido *</label>
+                <label for="pedNumero">N&uacute;mero de Pedido *</label>
                 <input type="text" id="pedNumero" required>
+            </div>
+            <div class="form-group">
+                <label for="pedJoorPO">Joor PO</label>
+                <input type="text" id="pedJoorPO" placeholder="N&uacute;mero de pedido en Joor">
             </div>
             <div class="form-group">
                 <label for="pedCliente">Cliente *</label>
@@ -313,15 +572,81 @@
                 </div>
                 <div class="form-group">
                     <label for="pedMoneda">Moneda *</label>
-                    <select id="pedMoneda" required>
-                        <option value="EUR">EUR (€)</option>
+                    <select id="pedMoneda" required onchange="calcularImporteCredito()">
+                        <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
             </div>
             <div class="form-group">
-                <label for="pedImporte">Importe *</label>
-                <input type="number" id="pedImporte" step="0.01" min="0" required>
+                <label for="pedImporte">Importe Total *</label>
+                <input type="number" id="pedImporte" step="0.01" min="0" required oninput="calcularImporteCredito()">
+            </div>
+            <div class="form-group">
+                <label for="pedCondicionesPago">Condiciones de Pago</label>
+                <select id="pedCondicionesPago" onchange="calcularImporteCredito()">
+                    <option value="NET30">NET30 (100% cr&eacute;dito)</option>
+                    <option value="NET60">NET60 (100% cr&eacute;dito)</option>
+                    <option value="NET90">NET90 (100% cr&eacute;dito)</option>
+                    <option value="30_ANT_NET30">30% anticipo + NET30</option>
+                    <option value="50_ANT_NET30">50% anticipo + NET30</option>
+                    <option value="50_ANT_NET60">50% anticipo + NET60</option>
+                    <option value="custom">Personalizado...</option>
+                </select>
+            </div>
+            <div id="pedCustomAnticipo" class="form-row" style="display:none">
+                <div class="form-group">
+                    <label for="pedAnticipoPct">% Anticipo</label>
+                    <input type="number" id="pedAnticipoPct" step="1" min="0" max="100" value="0" oninput="calcularImporteCredito()">
+                </div>
+                <div class="form-group">
+                    <label for="pedNetDays">D&iacute;as cr&eacute;dito</label>
+                    <input type="number" id="pedNetDays" step="1" min="1" value="30">
+                </div>
+            </div>
+            <div id="pedDesglose" class="form-group" style="display:none; background:var(--bg-dark); padding:12px; border-radius:8px; margin-top:4px">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px">
+                    <span>Anticipo:</span>
+                    <strong id="pedImporteAnticipo">0,00 &euro;</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between">
+                    <span>A cr&eacute;dito (Hilldun):</span>
+                    <strong id="pedImporteCredito" style="color:var(--primary)">0,00 &euro;</strong>
+                </div>
+            </div>
+            <hr style="border-color:var(--border); margin:16px 0">
+            <div class="form-group">
+                <label for="pedEstado">Estado del Pedido</label>
+                <select id="pedEstado">
+                    <option value="confirmado">Confirmado</option>
+                    <option value="en_preparacion">En preparaci&oacute;n</option>
+                    <option value="preparado">Preparado</option>
+                    <option value="enviado">Enviado</option>
+                    <option value="entregado">Entregado</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="pedMetodoEnvio">M&eacute;todo de Env&iacute;o</label>
+                    <input type="text" id="pedMetodoEnvio" list="metodoEnvioList" placeholder="Ej: DHL Express">
+                    <datalist id="metodoEnvioList">
+                        <option value="DHL Express">
+                        <option value="FedEx">
+                        <option value="FedEx International Priority">
+                        <option value="UPS">
+                        <option value="UPS Express">
+                        <option value="TNT">
+                        <option value="SEUR">
+                        <option value="MRW">
+                        <option value="Correos Express">
+                        <option value="GLS">
+                        <option value="Recogida en almac&eacute;n">
+                    </datalist>
+                </div>
+                <div class="form-group">
+                    <label for="pedTracking">Tracking Number</label>
+                    <input type="text" id="pedTracking" placeholder="N&uacute;mero de seguimiento">
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalPedido')">Cancelar</button>
@@ -335,28 +660,40 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalFacturaTitle">Nueva Factura</h3>
-                <button class="modal-close" onclick="cerrarModal('modalFactura')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalFactura')">&times;</button>
             </div>
             <div class="form-group">
-                <label for="facNumero">Número de Factura *</label>
+                <label>Tipo de documento *</label>
+                <div class="form-row" style="gap: 8px; margin-bottom: 8px;">
+                    <button type="button" id="facTipoFactura" class="btn btn-primary" onclick="cambiarTipoFactura('factura')" style="flex:1;">Factura</button>
+                    <button type="button" id="facTipoAbono" class="btn btn-secondary" onclick="cambiarTipoFactura('abono')" style="flex:1;">Rectificativa / Abono</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="facNumero">N&uacute;mero de Factura *</label>
                 <input type="text" id="facNumero" required>
             </div>
             <div class="form-group">
                 <label for="facCliente">Cliente *</label>
-                <select id="facCliente" required onchange="cargarPedidosCliente()">
+                <select id="facCliente" required onchange="cargarPedidosCliente(); cargarFacturasAbonables()">
                     <option value="">Seleccionar cliente...</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="facPedidos">Pedido(s) Origen (separados por comas)</label>
-                <input type="text" id="facPedidos" placeholder="Ej: PED001, PED002">
-                <small style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">
-                    Pedidos del cliente: <span id="pedidosDisponibles">-</span>
-                </small>
+            <div class="form-group" id="facPedidosGroup">
+                <label>Pedido(s) Origen</label>
+                <div id="pedidosCheckboxes" style="margin-bottom: 4px;"></div>
+                <input type="hidden" id="facPedidos">
+                <small id="pedidosDisponiblesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">Selecciona un cliente para ver sus pedidos</small>
+            </div>
+            <div class="form-group" id="facAbonoGroup" style="display:none;">
+                <label>Factura(s) que abona *</label>
+                <div id="facturasAbonablesCheckboxes" style="margin-bottom: 4px;"></div>
+                <input type="hidden" id="facFacturasAbonadas">
+                <small id="facturasAbonablesInfo" style="color: var(--gray-500); font-size: 13px; display: block; margin-top: 4px;">Selecciona un cliente para ver sus facturas</small>
             </div>
             <div class="form-row">
                 <div class="form-group">
-                    <label for="facFecha">Fecha Emisión *</label>
+                    <label for="facFecha">Fecha Emisi&oacute;n *</label>
                     <input type="date" id="facFecha" required>
                 </div>
                 <div class="form-group">
@@ -368,14 +705,19 @@
                 <div class="form-group">
                     <label for="facMoneda">Moneda *</label>
                     <select id="facMoneda" required>
-                        <option value="EUR">EUR (€)</option>
+                        <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="facImporte">Importe *</label>
+                    <label for="facImporte" id="facImporteLabel">Importe *</label>
                     <input type="number" id="facImporte" step="0.01" min="0" required>
+                    <small id="facImporteHelp" style="color: var(--gray-500); font-size: 13px; display: none; margin-top: 4px;">Introduce el importe en positivo. Se guardar&aacute; como negativo.</small>
                 </div>
+            </div>
+            <div class="form-group">
+                <label for="facNotas">Notas / Observaciones</label>
+                <textarea id="facNotas" rows="2" placeholder="Ej: Pago aplazado, pendiente de reclamaci&oacute;n..."></textarea>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalFactura')">Cancelar</button>
@@ -389,26 +731,39 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3 class="modal-title" id="modalCobroTitle">Nuevo Cobro</h3>
-                <button class="modal-close" onclick="cerrarModal('modalCobro')">×</button>
+                <button class="modal-close" onclick="cerrarModal('modalCobro')">&times;</button>
             </div>
             <div class="form-group">
+                <label>Aplicar cobro a *</label>
+                <div class="form-row" style="gap: 8px; margin-bottom: 8px;">
+                    <button type="button" id="cobTipoFactura" class="btn btn-primary" onclick="cambiarTipoCobro('factura')" style="flex:1;">Factura</button>
+                    <button type="button" id="cobTipoPedido" class="btn btn-secondary" onclick="cambiarTipoCobro('pedido')" style="flex:1;">Pedido (Anticipo)</button>
+                </div>
+            </div>
+            <div class="form-group" id="cobFacturaGroup">
                 <label for="cobFactura">Factura *</label>
-                <select id="cobFactura" required onchange="mostrarInfoFactura()">
+                <select id="cobFactura" required onchange="mostrarInfoCobro()">
                     <option value="">Seleccionar factura...</option>
+                </select>
+            </div>
+            <div class="form-group" id="cobPedidoGroup" style="display:none;">
+                <label for="cobPedido">Pedido *</label>
+                <select id="cobPedido" onchange="mostrarInfoCobro()">
+                    <option value="">Seleccionar pedido...</option>
                 </select>
             </div>
             <div id="infoFactura" class="info-box" style="display:none;">
                 <div class="info-row">
                     <span style="color: var(--gray-700);">Importe total:</span>
-                    <strong id="infFactTotal">0,00 €</strong>
+                    <strong id="infFactTotal">0,00 EUR</strong>
                 </div>
                 <div class="info-row">
                     <span style="color: var(--gray-700);">Ya cobrado:</span>
-                    <strong id="infFactCobrado">0,00 €</strong>
+                    <strong id="infFactCobrado">0,00 EUR</strong>
                 </div>
                 <div class="info-row">
                     <span style="color: var(--gray-700);">Pendiente:</span>
-                    <strong id="infFactPendiente" style="color: var(--warning);">0,00 €</strong>
+                    <strong id="infFactPendiente" style="color: var(--warning);">0,00 EUR</strong>
                 </div>
             </div>
             <div class="form-row">
@@ -419,7 +774,7 @@
                 <div class="form-group">
                     <label for="cobMoneda">Moneda *</label>
                     <select id="cobMoneda" required>
-                        <option value="EUR">EUR (€)</option>
+                        <option value="EUR">EUR (&euro;)</option>
                         <option value="USD">USD ($)</option>
                     </select>
                 </div>
@@ -428,6 +783,10 @@
                 <label for="cobImporte">Importe *</label>
                 <input type="number" id="cobImporte" step="0.01" min="0" required>
             </div>
+            <div class="form-group">
+                <label for="cobNotas">Notas / Observaciones</label>
+                <textarea id="cobNotas" rows="2" placeholder="Ej: Transferencia bancaria, cheque n&ordm;..."></textarea>
+            </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="cerrarModal('modalCobro')">Cancelar</button>
                 <button class="btn btn-primary" onclick="guardarCobro()">Guardar</button>
@@ -435,12 +794,99 @@
         </div>
     </div>
 
-    <!-- Modal Confirmación Saldo Residual -->
+    <!-- Modal Solicitud de Credito Hilldun -->
+    <div id="modalSolicitudCredito" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalSolicitudCreditoTitle">Nueva Solicitud de Credito</h3>
+                <button class="modal-close" onclick="cerrarModal('modalSolicitudCredito')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="solPedido">Pedido *</label>
+                <select id="solPedido" required onchange="cargarInfoPedidoSolicitud()">
+                    <option value="">Seleccionar pedido...</option>
+                </select>
+            </div>
+            <div id="infoPedidoSolicitud" class="info-box" style="display:none;">
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Cliente:</span>
+                    <strong id="infSolCliente">-</strong>
+                </div>
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Showroom:</span>
+                    <strong id="infSolShowroom">-</strong>
+                </div>
+                <div class="info-row">
+                    <span style="color: var(--gray-700);">Importe del Pedido:</span>
+                    <strong id="infSolImporte">-</strong>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="solFecha">Fecha Solicitud *</label>
+                    <input type="date" id="solFecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="solEstado">Estado *</label>
+                    <select id="solEstado" required onchange="toggleCamposRespuesta()">
+                        <option value="pendiente">Pendiente</option>
+                        <option value="enviada">Enviada a Hilldun</option>
+                        <option value="aprobada">Aprobada</option>
+                        <option value="rechazada">Rechazada</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="solDeliveryStart">Fecha Inicio Envio</label>
+                    <input type="date" id="solDeliveryStart">
+                </div>
+                <div class="form-group">
+                    <label for="solDeliveryEnd">Fecha Fin Envio</label>
+                    <input type="date" id="solDeliveryEnd">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="solPONumber">Numero PO (si difiere del pedido)</label>
+                <input type="text" id="solPONumber" placeholder="Dejar vacio para usar numero de pedido">
+            </div>
+            <div id="camposRespuesta" style="display:none;">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="solReferencia">Referencia Hilldun</label>
+                        <input type="text" id="solReferencia" placeholder="Ej: HD-2026-001">
+                    </div>
+                    <div class="form-group">
+                        <label for="solFechaRespuesta">Fecha Respuesta</label>
+                        <input type="date" id="solFechaRespuesta">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="solLimiteCredito">Limite de Credito Aprobado</label>
+                    <input type="number" id="solLimiteCredito" step="0.01" min="0">
+                </div>
+                <div class="form-group">
+                    <label for="solCondiciones">Condiciones</label>
+                    <textarea id="solCondiciones" placeholder="Terminos y condiciones del credito..."></textarea>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="solNotas">Notas</label>
+                <textarea id="solNotas" placeholder="Observaciones adicionales..."></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalSolicitudCredito')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarSolicitudCredito()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Confirmacion Saldo Residual -->
     <div id="modalSaldoResidual" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title">⚠️ Saldo Residual Detectado</h3>
-                <button class="modal-close" onclick="cerrarModal('modalSaldoResidual')">×</button>
+                <h3 class="modal-title">Saldo Residual Detectado</h3>
+                <button class="modal-close" onclick="cerrarModal('modalSaldoResidual')">&times;</button>
             </div>
             <p style="margin-bottom: 24px; color: var(--gray-700);" id="mensajeSaldoResidual"></p>
             <div class="modal-footer">
@@ -450,11 +896,66 @@
         </div>
     </div>
 
+    <!-- Modal Liquidación -->
+    <div id="modalLiquidacion" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalLiquidacionTitle">Nueva Liquidaci&oacute;n</h3>
+                <button class="modal-close" onclick="cerrarModal('modalLiquidacion')">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="liqShowroom">Showroom *</label>
+                <select id="liqShowroom" required>
+                    <option value="">Seleccionar showroom...</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="liqFechaInicio">Periodo Inicio *</label>
+                    <input type="date" id="liqFechaInicio" required>
+                </div>
+                <div class="form-group">
+                    <label for="liqFechaFin">Periodo Fin *</label>
+                    <input type="date" id="liqFechaFin" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="liqMoneda">Moneda *</label>
+                    <select id="liqMoneda" required>
+                        <option value="EUR">EUR (&euro;)</option>
+                        <option value="USD">USD ($)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="liqImporte">Importe Pagado *</label>
+                    <input type="number" id="liqImporte" step="0.01" min="0" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="liqFechaPago">Fecha de Pago *</label>
+                <input type="date" id="liqFechaPago" required>
+            </div>
+            <div class="form-group">
+                <label for="liqNotas">Notas</label>
+                <textarea id="liqNotas" rows="2"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="cerrarModal('modalLiquidacion')">Cancelar</button>
+                <button class="btn btn-primary" onclick="guardarLiquidacion()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <div class="footer-logo">Charo Ruiz Ibiza</div>
-        <p>Sistema de Comisiones de Showrooms v1.0</p>
+        <p>Sistema de Comisiones de Showrooms v3.0</p>
     </footer>
 
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
