@@ -28,3 +28,11 @@ pruebas/
 datos_reales/
 backups/
 exports/
+
+# Scripts FTP Hilldun - archivos sensibles y generados
+scripts/.env
+scripts/serviceAccountKey.json
+scripts/csv_pendientes/
+scripts/csv_respuestas/
+scripts/hilldun_ftp.log
+scripts/node_modules/
