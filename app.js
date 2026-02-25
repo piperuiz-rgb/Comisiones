@@ -128,6 +128,11 @@ const DB = {
 
     // Escucha cambios en tiempo real de Firestore (sincroniza entre dispositivos)
     _startRealtimeSync: function() {
+        // Listener especial para el estado de sincronizacion FTP de Hilldun
+        db.collection('data').doc('hilldunSync').onSnapshot(doc => {
+            renderEstadoSync(doc.exists ? doc.data() : null);
+        }, err => console.warn('Error en listener hilldunSync:', err));
+
         COLLECTIONS.forEach(col => {
             const unsub = db.collection('data').doc(col).onSnapshot(doc => {
                 if (DB._ignoreNext[col]) {
@@ -4959,8 +4964,47 @@ window.addEventListener('beforeunload', function() {
 // MODULO: HILLDUN CREDITO
 // ========================================
 
+function renderEstadoSync(data) {
+    const el = document.getElementById('hilldunSyncStatus');
+    if (!el) return;
+    if (!data) {
+        el.innerHTML = `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;font-size:13px;color:#94a3b8;">
+            <strong>Ultima sincronizacion FTP:</strong> Nunca ejecutada &mdash; ejecuta el script <code>ftp-hilldun.js</code> desde tu ordenador para sincronizar con Hilldun.
+        </div>`;
+        return;
+    }
+    const fecha = data.timestamp ? new Date(data.timestamp) : null;
+    const fechaStr = fecha ? fecha.toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+    const color  = data.exito ? '#f0fdf4' : '#fef2f2';
+    const border = data.exito ? '#bbf7d0' : '#fecaca';
+    const icon      = data.exito ? '&#10003;' : '&#10007;';
+    const iconColor = data.exito ? '#16a34a'  : '#dc2626';
+    const modoLabel = { enviar: 'Enviar', descargar: 'Descargar', sincronizar: 'Sincronizar' }[data.modo] || data.modo || '—';
+    const detalle = [];
+    if (data.enviadas   > 0) detalle.push(`${data.enviadas} solicitud${data.enviadas !== 1 ? 'es' : ''} enviada${data.enviadas !== 1 ? 's' : ''}`);
+    if (data.descargadas > 0) detalle.push(`${data.descargadas} archivo${data.descargadas !== 1 ? 's' : ''} descargado${data.descargadas !== 1 ? 's' : ''}`);
+    if (data.procesadas  > 0) detalle.push(`${data.procesadas} respuesta${data.procesadas !== 1 ? 's' : ''} procesada${data.procesadas !== 1 ? 's' : ''}`);
+    if (!data.exito && data.error) detalle.push(`Error: ${data.error}`);
+    if (detalle.length === 0) detalle.push(data.exito ? 'Sin cambios' : 'Sin detalle');
+    el.innerHTML = `<div style="background:${color};border:1px solid ${border};border-radius:8px;padding:14px 18px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:18px;color:${iconColor};font-weight:bold;">${icon}</span>
+        <div>
+            <div style="font-weight:600;color:#1e293b;">Ultima sincronizacion FTP &middot; Modo: ${modoLabel}</div>
+            <div style="color:#475569;margin-top:2px;">${fechaStr} &nbsp;&middot;&nbsp; ${detalle.join(' &middot; ')}</div>
+        </div>
+    </div>`;
+}
+
+function cargarEstadoSync() {
+    if (typeof db === 'undefined') return;
+    db.collection('data').doc('hilldunSync').get().then(doc => {
+        renderEstadoSync(doc.exists ? doc.data() : null);
+    }).catch(e => console.warn('No se pudo cargar estado de sync:', e));
+}
+
 function cargarTablaHilldun() {
     actualizarSftpQuickInfo(DB.getHilldunConfig());
+    cargarEstadoSync();
     const solicitudes = DB.getSolicitudesCredito();
     const pedidos = DB.getPedidos();
     const clientes = DB.getClientes();

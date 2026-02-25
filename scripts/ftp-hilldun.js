@@ -92,6 +92,15 @@ async function actualizarDocumento(coleccion, id, datos) {
     await db().collection(coleccion).doc(id).update(datos);
 }
 
+async function guardarEstadoSync(stats) {
+    try {
+        await db().collection('data').doc('hilldunSync').set(stats);
+        log('INFO', 'Estado de sincronizacion guardado en Firestore');
+    } catch (err) {
+        log('WARN', `No se pudo guardar estado de sync en Firestore: ${err.message}`);
+    }
+}
+
 async function obtenerHilldunConfig() {
     const snap = await db().collection('hilldunConfig').limit(1).get();
     if (snap.empty) return {};
@@ -239,7 +248,7 @@ async function modoEnviar() {
     const pendientes = solicitudes.filter(s => s.estado === 'pendiente');
     if (pendientes.length === 0) {
         log('INFO', 'No hay solicitudes de crédito pendientes para enviar.');
-        return;
+        return { enviadas: 0 };
     }
 
     log('INFO', `Encontradas ${pendientes.length} solicitudes pendientes.`);
@@ -264,7 +273,7 @@ async function modoEnviar() {
         log('WARN', 'Faltan credenciales SFTP. El CSV se ha generado localmente pero NO se ha subido.');
         log('INFO', `Archivo listo para subir manualmente: ${rutaLocal}`);
         log('INFO', 'Configura SFTP_HOST, SFTP_USER y SFTP_PASSWORD en el archivo .env o en la app web.');
-        return;
+        return { enviadas: 0, sinSftp: true };
     }
 
     // Subir por SFTP
@@ -296,6 +305,7 @@ async function modoEnviar() {
         );
         await Promise.all(actualizaciones);
         log('INFO', `${pendientes.length} solicitudes marcadas como "enviada" en Firestore.`);
+        return { enviadas: pendientes.length };
 
     } catch (err) {
         log('ERROR', `Error SFTP: ${err.message}`);
@@ -382,8 +392,10 @@ async function modoDescargar() {
     // Procesar los CSV descargados e importar respuestas a Firestore
     if (archivosDescargados > 0) {
         log('INFO', 'Procesando respuestas descargadas...');
-        await procesarRespuestasDescargadas();
+        const procesadas = await procesarRespuestasDescargadas();
+        return { descargadas: archivosDescargados, procesadas };
     }
+    return { descargadas: 0, procesadas: 0 };
 }
 
 // ============================================================
@@ -500,6 +512,7 @@ async function procesarRespuestasDescargadas() {
     }
 
     log('INFO', `Resumen: ${totalActualizadas} solicitudes actualizadas, ${totalNoEncontradas} no encontradas.`);
+    return totalActualizadas;
 }
 
 // ============================================================
@@ -508,8 +521,9 @@ async function procesarRespuestasDescargadas() {
 
 async function modoSincronizar() {
     log('INFO', '=== MODO SINCRONIZAR: Enviar + Descargar ===');
-    await modoEnviar();
-    await modoDescargar();
+    const resEnviar = await modoEnviar();
+    const resDescargar = await modoDescargar();
+    return { ...resEnviar, ...resDescargar };
 }
 
 // ============================================================
@@ -527,19 +541,44 @@ async function main() {
 
     log('INFO', `Iniciando ftp-hilldun.js | modo=${modo}`);
 
+    let resultado = {};
     try {
         switch (modo) {
-            case 'enviar':      await modoEnviar();       break;
-            case 'descargar':   await modoDescargar();    break;
-            case 'sincronizar': await modoSincronizar();  break;
+            case 'enviar':      resultado = await modoEnviar();       break;
+            case 'descargar':   resultado = await modoDescargar();    break;
+            case 'sincronizar': resultado = await modoSincronizar();  break;
             default:
                 log('ERROR', `Modo desconocido: "${modo}". Usa --modo=enviar, --modo=descargar o --modo=sincronizar`);
                 process.exit(1);
         }
         log('INFO', 'Operación completada con éxito.');
+        inicializarFirebase();
+        await guardarEstadoSync({
+            timestamp: new Date().toISOString(),
+            modo,
+            exito: true,
+            error: null,
+            enviadas:    resultado.enviadas    || 0,
+            descargadas: resultado.descargadas || 0,
+            procesadas:  resultado.procesadas  || 0,
+        });
     } catch (err) {
         log('ERROR', `Operación fallida: ${err.message}`);
         if (process.env.DEBUG) console.error(err);
+        try {
+            inicializarFirebase();
+            await guardarEstadoSync({
+                timestamp: new Date().toISOString(),
+                modo,
+                exito: false,
+                error: err.message,
+                enviadas:    resultado.enviadas    || 0,
+                descargadas: resultado.descargadas || 0,
+                procesadas:  resultado.procesadas  || 0,
+            });
+        } catch (e2) {
+            log('WARN', `No se pudo guardar estado de error: ${e2.message}`);
+        }
         process.exit(1);
     }
 }
