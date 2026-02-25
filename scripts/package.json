@@ -1,0 +1,16 @@
+{
+  "name": "hilldun-ftp-automation",
+  "version": "1.0.0",
+  "description": "Automatización FTP con Hilldun: envío de solicitudes de crédito y descarga de respuestas",
+  "main": "ftp-hilldun.js",
+  "scripts": {
+    "enviar": "node ftp-hilldun.js --modo=enviar",
+    "descargar": "node ftp-hilldun.js --modo=descargar",
+    "sincronizar": "node ftp-hilldun.js --modo=sincronizar"
+  },
+  "dependencies": {
+    "ssh2-sftp-client": "^10.0.3",
+    "firebase-admin": "^12.0.0",
+    "dotenv": "^16.4.5"
+  }
+}

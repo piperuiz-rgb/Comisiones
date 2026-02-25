@@ -128,6 +128,11 @@ const DB = {
 
     // Escucha cambios en tiempo real de Firestore (sincroniza entre dispositivos)
     _startRealtimeSync: function() {
+        // Listener especial para el estado de sincronizacion FTP de Hilldun
+        db.collection('data').doc('hilldunSync').onSnapshot(doc => {
+            renderEstadoSync(doc.exists ? doc.data() : null);
+        }, err => console.warn('Error en listener hilldunSync:', err));
+
         COLLECTIONS.forEach(col => {
             const unsub = db.collection('data').doc(col).onSnapshot(doc => {
                 if (DB._ignoreNext[col]) {
@@ -513,18 +518,146 @@ function calcularEstadoPedido(pedidoId) {
 }
 
 // ========================================
-// INICIALIZACIÓN
+// AUTENTICACIÓN
 // ========================================
 
-document.addEventListener('DOMContentLoaded', async function() {
-    // Mostrar estado de carga mientras se conecta a Firestore
+let currentUserRole = null;
+let currentUserData = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('[Auth] Iniciando listener de autenticación');
+    auth.onAuthStateChanged(async function(user) {
+        if (user) {
+            await manejarUsuarioLogueado(user);
+        } else {
+            mostrarPantallaLogin();
+        }
+    });
+});
+
+async function manejarUsuarioLogueado(user) {
+    try {
+        console.log('[Auth] Verificando rol para uid:', user.uid);
+        const userDoc = await db.collection('users').doc(user.uid).get();
+
+        if (!userDoc.exists) {
+            // Si no hay ningún usuario aún, el primero es admin (bootstrap)
+            const snapshot = await db.collection('users').limit(1).get();
+            if (snapshot.empty) {
+                await db.collection('users').doc(user.uid).set({
+                    email: user.email || user.displayName,
+                    role: 'admin',
+                    createdAt: new Date().toISOString(),
+                });
+                currentUserRole = 'admin';
+                currentUserData = { role: 'admin', email: user.email };
+            } else {
+                mostrarAccesoDenegado(user);
+                return;
+            }
+        } else {
+            currentUserRole = userDoc.data().role;
+            currentUserData = userDoc.data();
+        }
+
+        console.log('[Auth] Rol:', currentUserRole);
+        ocultarPantallaLogin(user);
+
+        if (currentUserRole === 'admin') {
+            await inicializarAppAdmin();
+        } else if (currentUserRole === 'showroom') {
+            await inicializarPortalShowroomAuth(currentUserData.showroomId);
+        }
+    } catch (error) {
+        console.error('[Auth] Error al verificar acceso:', error);
+        mostrarErrorLogin('Error al verificar permisos. Comprueba tu conexión.');
+    }
+}
+
+function mostrarPantallaLogin() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('mainHeader').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'none';
+}
+
+function ocultarPantallaLogin(user) {
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('mainHeader').style.display = 'block';
+    const emailEl = document.getElementById('userEmailDisplay');
+    if (emailEl) emailEl.textContent = user.email || user.displayName || '';
+    document.getElementById('userInfo').style.display = 'flex';
+}
+
+function mostrarAccesoDenegado(user) {
+    const form = document.getElementById('loginForm');
+    form.innerHTML = `
+        <div class="login-error" style="display:block; margin-bottom: 20px;">
+            <strong>Sin acceso</strong><br>
+            <span style="font-size:13px">${user.email || user.displayName} no tiene permisos asignados.<br>Contacta con el administrador.</span>
+        </div>
+        <button onclick="cerrarSesion()" class="btn btn-secondary" style="width:100%; padding:12px;">Cerrar sesión</button>
+    `;
+    document.getElementById('loginOverlay').style.display = 'flex';
+}
+
+async function loginConGoogle() {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+        document.getElementById('loginError').style.display = 'none';
+        await auth.signInWithPopup(provider);
+    } catch (error) {
+        if (error.code !== 'auth/popup-closed-by-user') {
+            mostrarErrorLogin(mensajeErrorAuth(error.code));
+        }
+    }
+}
+
+async function loginConEmail() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) { mostrarErrorLogin('Introduce email y contraseña'); return; }
+    try {
+        document.getElementById('loginError').style.display = 'none';
+        await auth.signInWithEmailAndPassword(email, password);
+    } catch (error) {
+        mostrarErrorLogin(mensajeErrorAuth(error.code));
+    }
+}
+
+async function cerrarSesion() {
+    if (confirm('¿Cerrar sesión?')) {
+        await auth.signOut();
+        location.reload();
+    }
+}
+
+function mostrarErrorLogin(msg) {
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.style.display = 'block';
+}
+
+function mensajeErrorAuth(code) {
+    const errores = {
+        'auth/user-not-found': 'Email no registrado',
+        'auth/wrong-password': 'Contraseña incorrecta',
+        'auth/invalid-credential': 'Email o contraseña incorrectos',
+        'auth/invalid-email': 'Email inválido',
+        'auth/too-many-requests': 'Demasiados intentos. Espera un momento.',
+        'auth/network-request-failed': 'Error de conexión. Comprueba internet.',
+    };
+    return errores[code] || 'Error al iniciar sesión (' + code + ')';
+}
+
+async function inicializarAppAdmin() {
+    console.log('[Auth] Inicializando app de administrador');
+    document.getElementById('adminActions').style.display = 'flex';
+    document.getElementById('mainApp').style.display = 'block';
+
     const container = document.querySelector('.container');
     container.style.opacity = '0.4';
     container.style.pointerEvents = 'none';
-
-    // Cargar datos desde Firestore (con fallback a localStorage)
     await DB.init();
-
     container.style.opacity = '1';
     container.style.pointerEvents = '';
 
@@ -537,7 +670,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const treintaDias = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000);
     document.getElementById('facVencimiento').valueAsDate = treintaDias;
 
-    // Fechas informe (mes actual)
     const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
     const ultimoDia = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
     document.getElementById('infFechaInicio').valueAsDate = primerDia;
@@ -566,9 +698,131 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (e.target.files.length > 0) importarCreditResponses(e.target.files[0]);
     });
 
-    // Cargar dashboard inicial
     cargarDashboard();
-});
+}
+
+async function inicializarPortalShowroomAuth(showroomId) {
+    if (!showroomId) { mostrarAccesoDenegado(auth.currentUser); return; }
+    await DB.init();
+    document.getElementById('mainApp').style.display = 'none';
+    let portal = document.getElementById('showroomPortal');
+    if (!portal) {
+        portal = document.createElement('div');
+        portal.id = 'showroomPortal';
+        document.body.appendChild(portal);
+    }
+    portal.style.display = 'block';
+    renderPortalShowroom(showroomId, null, true);
+}
+
+// ========================================
+// GESTIÓN DE USUARIOS (solo admin)
+// ========================================
+
+async function abrirGestionUsuarios() {
+    const showrooms = DB.getShowrooms();
+    const sel = document.getElementById('nuevoUsuarioShowroom');
+    sel.innerHTML = '<option value="">Seleccionar showroom...</option>';
+    showrooms.forEach(s => {
+        sel.innerHTML += `<option value="${s.id}">${s.nombre}</option>`;
+    });
+    document.getElementById('nuevoUsuarioError').style.display = 'none';
+    document.getElementById('nuevoUsuarioExito').style.display = 'none';
+    await cargarListaUsuarios();
+    document.getElementById('modalUsuarios').style.display = 'flex';
+}
+
+async function cargarListaUsuarios() {
+    const container = document.getElementById('listaUsuarios');
+    try {
+        const snapshot = await db.collection('users').get();
+        if (snapshot.empty) {
+            container.innerHTML = '<p style="color:var(--gray-500)">No hay usuarios registrados</p>';
+            return;
+        }
+        const showrooms = DB.getShowrooms();
+        let html = '<table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="border-bottom:2px solid #E2E8F0;">';
+        html += '<th style="text-align:left;padding:8px 4px;">Email</th><th style="text-align:left;padding:8px 4px;">Rol</th><th style="text-align:left;padding:8px 4px;">Showroom</th><th style="padding:8px 4px;"></th>';
+        html += '</tr></thead><tbody>';
+        snapshot.forEach(doc => {
+            const u = doc.data();
+            const show = u.showroomId ? showrooms.find(s => s.id === u.showroomId) : null;
+            const rolLabel = { admin: 'Administrador', showroom: 'Showroom' }[u.role] || u.role;
+            html += `<tr style="border-bottom:1px solid #F3F4F6;">
+                <td style="padding:8px 4px;">${u.email || '-'}</td>
+                <td style="padding:8px 4px;"><span class="badge badge-${u.role === 'admin' ? 'primary' : 'secondary'}">${rolLabel}</span></td>
+                <td style="padding:8px 4px;">${show ? show.nombre : '-'}</td>
+                <td style="padding:8px 4px;text-align:right;"><button class="btn btn-danger btn-icon" onclick="eliminarUsuario('${doc.id}')" title="Revocar acceso">&times;</button></td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (e) {
+        container.innerHTML = '<p style="color:var(--danger)">Error al cargar usuarios: ' + e.message + '</p>';
+    }
+}
+
+function toggleShowroomSelector() {
+    const rol = document.getElementById('nuevoUsuarioRol').value;
+    document.getElementById('nuevoUsuarioShowroomGroup').style.display = rol === 'showroom' ? 'block' : 'none';
+}
+
+async function crearNuevoUsuario() {
+    const email = document.getElementById('nuevoUsuarioEmail').value.trim();
+    const password = document.getElementById('nuevoUsuarioPassword').value;
+    const rol = document.getElementById('nuevoUsuarioRol').value;
+    const showroomId = document.getElementById('nuevoUsuarioShowroom').value;
+    const errorEl = document.getElementById('nuevoUsuarioError');
+    const exitoEl = document.getElementById('nuevoUsuarioExito');
+    errorEl.style.display = 'none';
+    exitoEl.style.display = 'none';
+
+    if (!email || !password) {
+        errorEl.textContent = 'Email y contraseña son obligatorios';
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (password.length < 6) {
+        errorEl.textContent = 'La contraseña debe tener al menos 6 caracteres';
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+        return;
+    }
+    if (rol === 'showroom' && !showroomId) {
+        errorEl.textContent = 'Selecciona el showroom asignado';
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+        return;
+    }
+    try {
+        const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+        const uid = cred.user.uid;
+        const userData = { email, role: rol, createdAt: new Date().toISOString() };
+        if (rol === 'showroom') userData.showroomId = showroomId;
+        await db.collection('users').doc(uid).set(userData);
+        await secondaryAuth.signOut();
+        exitoEl.textContent = `Acceso creado para ${email}`;
+        exitoEl.style.display = 'block';
+        document.getElementById('nuevoUsuarioEmail').value = '';
+        document.getElementById('nuevoUsuarioPassword').value = '';
+        await cargarListaUsuarios();
+    } catch (error) {
+        errorEl.textContent = mensajeErrorAuth(error.code) || error.message;
+        errorEl.className = 'alert alert-error';
+        errorEl.style.display = 'block';
+    }
+}
+
+async function eliminarUsuario(uid) {
+    if (!confirm('¿Revocar acceso a este usuario? Solo se elimina el acceso a la app, no la cuenta de Firebase.')) return;
+    try {
+        await db.collection('users').doc(uid).delete();
+        await cargarListaUsuarios();
+    } catch (e) {
+        alert('Error al revocar acceso: ' + e.message);
+    }
+}
 
 // ========================================
 // MÓDULO: DASHBOARD
@@ -4959,8 +5213,47 @@ window.addEventListener('beforeunload', function() {
 // MODULO: HILLDUN CREDITO
 // ========================================
 
+function renderEstadoSync(data) {
+    const el = document.getElementById('hilldunSyncStatus');
+    if (!el) return;
+    if (!data) {
+        el.innerHTML = `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 18px;font-size:13px;color:#94a3b8;">
+            <strong>Ultima sincronizacion FTP:</strong> Nunca ejecutada &mdash; ejecuta el script <code>ftp-hilldun.js</code> desde tu ordenador para sincronizar con Hilldun.
+        </div>`;
+        return;
+    }
+    const fecha = data.timestamp ? new Date(data.timestamp) : null;
+    const fechaStr = fecha ? fecha.toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+    const color  = data.exito ? '#f0fdf4' : '#fef2f2';
+    const border = data.exito ? '#bbf7d0' : '#fecaca';
+    const icon      = data.exito ? '&#10003;' : '&#10007;';
+    const iconColor = data.exito ? '#16a34a'  : '#dc2626';
+    const modoLabel = { enviar: 'Enviar', descargar: 'Descargar', sincronizar: 'Sincronizar' }[data.modo] || data.modo || '—';
+    const detalle = [];
+    if (data.enviadas   > 0) detalle.push(`${data.enviadas} solicitud${data.enviadas !== 1 ? 'es' : ''} enviada${data.enviadas !== 1 ? 's' : ''}`);
+    if (data.descargadas > 0) detalle.push(`${data.descargadas} archivo${data.descargadas !== 1 ? 's' : ''} descargado${data.descargadas !== 1 ? 's' : ''}`);
+    if (data.procesadas  > 0) detalle.push(`${data.procesadas} respuesta${data.procesadas !== 1 ? 's' : ''} procesada${data.procesadas !== 1 ? 's' : ''}`);
+    if (!data.exito && data.error) detalle.push(`Error: ${data.error}`);
+    if (detalle.length === 0) detalle.push(data.exito ? 'Sin cambios' : 'Sin detalle');
+    el.innerHTML = `<div style="background:${color};border:1px solid ${border};border-radius:8px;padding:14px 18px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="font-size:18px;color:${iconColor};font-weight:bold;">${icon}</span>
+        <div>
+            <div style="font-weight:600;color:#1e293b;">Ultima sincronizacion FTP &middot; Modo: ${modoLabel}</div>
+            <div style="color:#475569;margin-top:2px;">${fechaStr} &nbsp;&middot;&nbsp; ${detalle.join(' &middot; ')}</div>
+        </div>
+    </div>`;
+}
+
+function cargarEstadoSync() {
+    if (typeof db === 'undefined') return;
+    db.collection('data').doc('hilldunSync').get().then(doc => {
+        renderEstadoSync(doc.exists ? doc.data() : null);
+    }).catch(e => console.warn('No se pudo cargar estado de sync:', e));
+}
+
 function cargarTablaHilldun() {
     actualizarSftpQuickInfo(DB.getHilldunConfig());
+    cargarEstadoSync();
     const solicitudes = DB.getSolicitudesCredito();
     const pedidos = DB.getPedidos();
     const clientes = DB.getClientes();
