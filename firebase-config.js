@@ -11,7 +11,17 @@ const firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 
-// Initialize Firestore
+// Initialize Firestore and Auth
 const db = firebase.firestore();
+const auth = firebase.auth();
+
+// App secundaria para crear usuarios sin cerrar sesión del admin
+let secondaryApp;
+try {
+    secondaryApp = firebase.app('secondary');
+} catch (e) {
+    secondaryApp = firebase.initializeApp(firebaseConfig, 'secondary');
+}
+const secondaryAuth = secondaryApp.auth();
 
 console.log("Firebase inicializado correctamente - Proyecto: comisiones-app-33035");

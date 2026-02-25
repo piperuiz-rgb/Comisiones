@@ -9,22 +9,50 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <header>
+    <!-- Login Overlay -->
+    <div id="loginOverlay" style="display:flex;">
+        <div class="login-card">
+            <div class="login-logo">&#9670; Charo Ruiz Ibiza</div>
+            <div class="login-subtitle">Sistema de Comisiones de Showrooms</div>
+            <div id="loginForm">
+                <button class="btn-google" onclick="loginConGoogle()">
+                    <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+                    Entrar con Google
+                </button>
+                <div class="login-divider"><span>o</span></div>
+                <div class="login-email-form">
+                    <input type="email" id="loginEmail" class="login-input" placeholder="Email" onkeydown="if(event.key==='Enter')loginConEmail()">
+                    <input type="password" id="loginPassword" class="login-input" placeholder="Contrase&ntilde;a" onkeydown="if(event.key==='Enter')loginConEmail()">
+                    <button class="btn btn-primary" style="width:100%;padding:12px;" onclick="loginConEmail()">Iniciar sesi&oacute;n</button>
+                </div>
+                <div id="loginError" class="login-error" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <header id="mainHeader" style="display:none;">
         <div class="header-content">
             <div>
                 <div class="logo-text"><span class="logo-accent">&#9670;</span> Charo Ruiz Ibiza</div>
                 <div class="header-subtitle">Sistema de Comisiones de Showrooms</div>
             </div>
             <div class="actions">
-                <input type="file" id="importBackupInput" accept=".json" style="display:none">
-                <button class="btn btn-secondary" onclick="exportarBackup()" title="Exportar copia de seguridad">&darr; Backup</button>
-                <button class="btn btn-secondary" onclick="document.getElementById('importBackupInput').click()" title="Restaurar desde copia de seguridad">&uarr; Restaurar</button>
-                <button class="btn btn-secondary" onclick="restaurarAutoBackup()" title="Restaurar &uacute;ltima copia autom&aacute;tica">Auto-Backup</button>
+                <div id="adminActions" style="display:none; gap: 8px; align-items: center;">
+                    <input type="file" id="importBackupInput" accept=".json" style="display:none">
+                    <button class="btn btn-secondary" onclick="exportarBackup()" title="Exportar copia de seguridad">&darr; Backup</button>
+                    <button class="btn btn-secondary" onclick="document.getElementById('importBackupInput').click()" title="Restaurar desde copia de seguridad">&uarr; Restaurar</button>
+                    <button class="btn btn-secondary" onclick="restaurarAutoBackup()" title="Restaurar &uacute;ltima copia autom&aacute;tica">Auto-Backup</button>
+                    <button class="btn btn-secondary" onclick="abrirGestionUsuarios()" title="Gesti&oacute;n de accesos">&#128100; Usuarios</button>
+                </div>
+                <div id="userInfo" style="display:none; align-items: center; gap: 12px;">
+                    <span id="userEmailDisplay" style="font-size:13px; color: var(--gold); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+                    <button class="btn btn-secondary" onclick="cerrarSesion()" style="padding: 6px 14px; font-size:13px;">Salir</button>
+                </div>
             </div>
         </div>
     </header>
 
-    <div id="mainApp" class="container">
+    <div id="mainApp" class="container" style="display:none;">
         <!-- Barra de búsqueda global -->
         <div style="margin-bottom: 24px;">
             <input type="text" id="busquedaGlobal" placeholder="Buscar en todo el sistema (facturas, pedidos, clientes, showrooms)..." style="width: 100%; padding: 12px 16px; font-size: 14px;" oninput="busquedaGlobalHandler()">
@@ -949,6 +977,49 @@
         </div>
     </div>
 
+    <!-- Modal: Gestion de Usuarios -->
+    <div id="modalUsuarios" class="modal">
+        <div class="modal-content" style="max-width: 640px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Gesti&oacute;n de Accesos</h3>
+                <button class="modal-close" onclick="cerrarModal('modalUsuarios')">&times;</button>
+            </div>
+            <div style="border-bottom: 1px solid var(--gray-200); padding-bottom: 20px; margin-bottom: 20px;">
+                <h4 style="margin-bottom: 16px; color: var(--gray-700);">Crear nuevo acceso</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Email *</label>
+                        <input type="email" id="nuevoUsuarioEmail" placeholder="email@ejemplo.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Contrase&ntilde;a inicial *</label>
+                        <input type="password" id="nuevoUsuarioPassword" placeholder="M&iacute;nimo 6 caracteres">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Rol *</label>
+                        <select id="nuevoUsuarioRol" onchange="toggleShowroomSelector()">
+                            <option value="admin">Administrador</option>
+                            <option value="showroom" selected>Showroom</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="nuevoUsuarioShowroomGroup">
+                        <label>Showroom asignado *</label>
+                        <select id="nuevoUsuarioShowroom">
+                            <option value="">Seleccionar showroom...</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="nuevoUsuarioError" class="alert" style="display:none; margin-bottom: 12px;"></div>
+                <div id="nuevoUsuarioExito" class="alert alert-success" style="display:none; margin-bottom: 12px;"></div>
+                <button class="btn btn-primary" onclick="crearNuevoUsuario()">Crear acceso</button>
+            </div>
+            <h4 style="margin-bottom: 12px; color: var(--gray-700);">Usuarios registrados</h4>
+            <div id="listaUsuarios" style="font-size:14px;">Cargando...</div>
+        </div>
+    </div>
+
     <footer>
         <div class="footer-logo">Charo Ruiz Ibiza</div>
         <p>Sistema de Comisiones de Showrooms v3.0</p>
@@ -957,6 +1028,7 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="firebase-config.js"></script>
     <script src="app.js"></script>
 </body>
