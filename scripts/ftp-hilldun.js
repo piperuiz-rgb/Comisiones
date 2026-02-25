@@ -4,9 +4,11 @@
  * Automatización FTP/SFTP con Hilldun
  *
  * Modos de uso:
- *   node ftp-hilldun.js --modo=enviar      → Genera CSV de solicitudes pendientes y las sube por SFTP
- *   node ftp-hilldun.js --modo=descargar   → Descarga respuestas de Hilldun y actualiza Firestore
- *   node ftp-hilldun.js --modo=sincronizar → Hace ambas operaciones en secuencia
+ *   node ftp-hilldun.js --modo=enviar              → Genera CSV de solicitudes pendientes y las sube por SFTP
+ *   node ftp-hilldun.js --modo=descargar           → Descarga respuestas de Hilldun y actualiza Firestore
+ *   node ftp-hilldun.js --modo=sincronizar         → Hace ambas operaciones en secuencia
+ *   node ftp-hilldun.js --modo=pdfs                → Sube PDFs de facturas a la carpeta /PDFs del SFTP de Hilldun
+ *   node ftp-hilldun.js --modo=pdfs --carpeta=/ruta → Sube PDFs desde una carpeta específica
  *
  * Requisitos:
  *   1. Copiar .env.example como .env y rellenar los valores
@@ -36,10 +38,12 @@ const CONFIG = {
     paths: {
         inbound:  process.env.SFTP_INBOUND  || '/inbound',
         outbound: process.env.SFTP_OUTBOUND || '/outbound',
+        pdfs:     process.env.SFTP_PDFS     || '/PDFs',
     },
     local: {
         uploadDir:   process.env.CSV_UPLOAD_DIR   || path.join(__dirname, 'csv_pendientes'),
         downloadDir: process.env.CSV_DOWNLOAD_DIR  || path.join(__dirname, 'csv_respuestas'),
+        pdfsDir:     process.env.PDF_DIR           || path.join(__dirname, 'facturas_pdf'),
         logFile:     process.env.LOG_FILE          || path.join(__dirname, 'hilldun_ftp.log'),
     },
 };
@@ -527,28 +531,121 @@ async function modoSincronizar() {
 }
 
 // ============================================================
+// MODO: PDFS
+// ============================================================
+
+async function modoPdfs(carpetaOverride) {
+    log('INFO', '=== MODO PDFS: Subiendo facturas PDF a Hilldun ===');
+
+    // Leer config SFTP desde Firestore (si está disponible) o desde .env
+    let config = {};
+    try {
+        inicializarFirebase();
+        config = await obtenerHilldunConfig();
+    } catch (_) {
+        log('WARN', 'No se pudo leer config de Firestore, usando variables de entorno.');
+    }
+
+    const sftpHost = config.sftpHost || CONFIG.sftp.host;
+    const sftpUser = config.sftpUser || CONFIG.sftp.username;
+    const sftpPass = config.sftpPassword || CONFIG.sftp.password;
+
+    if (!sftpHost || !sftpUser || !sftpPass) {
+        log('ERROR', 'Faltan credenciales SFTP. Configúralas en la app web o en el archivo .env.');
+        process.exit(1);
+    }
+
+    const carpetaLocal = carpetaOverride || config.pdfDir || CONFIG.local.pdfsDir;
+
+    if (!fs.existsSync(carpetaLocal)) {
+        log('ERROR', `La carpeta de PDFs no existe: ${carpetaLocal}`);
+        log('INFO', 'Crea la carpeta y coloca los PDFs de facturas dentro, o usa --carpeta=/ruta/a/tus/pdfs');
+        process.exit(1);
+    }
+
+    const pdfs = fs.readdirSync(carpetaLocal).filter(f => f.toLowerCase().endsWith('.pdf'));
+
+    if (pdfs.length === 0) {
+        log('INFO', `No se encontraron archivos PDF en: ${carpetaLocal}`);
+        return { pdfsSubidos: 0 };
+    }
+
+    log('INFO', `PDFs encontrados: ${pdfs.length} (carpeta: ${carpetaLocal})`);
+
+    const sftp = new SftpClient();
+    let subidos = 0;
+    let errores = 0;
+
+    try {
+        log('INFO', `Conectando a SFTP: ${sftpUser}@${sftpHost}...`);
+        await sftp.connect({
+            host: sftpHost,
+            port: config.sftpPort || CONFIG.sftp.port,
+            username: sftpUser,
+            password: sftpPass,
+        });
+
+        const carpetaRemota = config.sftpPdfs || CONFIG.paths.pdfs;
+
+        // Asegurarse de que la carpeta /PDFs existe en el servidor
+        try {
+            await sftp.mkdir(carpetaRemota, true);
+        } catch (_) {
+            // Ya existe, ignorar
+        }
+
+        for (const nombrePdf of pdfs) {
+            const rutaLocal  = path.join(carpetaLocal, nombrePdf);
+            const rutaRemota = `${carpetaRemota}/${nombrePdf}`;
+            try {
+                log('INFO', `Subiendo: ${nombrePdf} → ${rutaRemota}`);
+                await sftp.put(rutaLocal, rutaRemota);
+                log('INFO', `OK: ${nombrePdf}`);
+                subidos++;
+            } catch (err) {
+                log('ERROR', `Error subiendo ${nombrePdf}: ${err.message}`);
+                errores++;
+            }
+        }
+
+        log('INFO', `Subida completada: ${subidos} PDFs subidos, ${errores} errores.`);
+        return { pdfsSubidos: subidos, pdfsError: errores };
+
+    } catch (err) {
+        log('ERROR', `Error de conexión SFTP: ${err.message}`);
+        throw err;
+    } finally {
+        await sftp.end().catch(() => {});
+    }
+}
+
+// ============================================================
 // PUNTO DE ENTRADA
 // ============================================================
 
 async function main() {
     const args = process.argv.slice(2);
-    const modoArg = args.find(a => a.startsWith('--modo='));
-    const modo = modoArg ? modoArg.split('=')[1] : 'sincronizar';
+    const modoArg    = args.find(a => a.startsWith('--modo='));
+    const carpetaArg = args.find(a => a.startsWith('--carpeta='));
+    const modo    = modoArg    ? modoArg.split('=')[1]    : 'sincronizar';
+    const carpeta = carpetaArg ? carpetaArg.split('=')[1] : null;
 
     // Crear directorios si no existen
     fs.mkdirSync(CONFIG.local.uploadDir,   { recursive: true });
     fs.mkdirSync(CONFIG.local.downloadDir, { recursive: true });
+    fs.mkdirSync(CONFIG.local.pdfsDir,     { recursive: true });
 
     log('INFO', `Iniciando ftp-hilldun.js | modo=${modo}`);
 
     let resultado = {};
     try {
         switch (modo) {
-            case 'enviar':      resultado = await modoEnviar();       break;
-            case 'descargar':   resultado = await modoDescargar();    break;
-            case 'sincronizar': resultado = await modoSincronizar();  break;
+            case 'enviar':      resultado = await modoEnviar();           break;
+            case 'descargar':   resultado = await modoDescargar();        break;
+            case 'sincronizar': resultado = await modoSincronizar();      break;
+            case 'pdfs':        resultado = await modoPdfs(carpeta);      break;
             default:
-                log('ERROR', `Modo desconocido: "${modo}". Usa --modo=enviar, --modo=descargar o --modo=sincronizar`);
+                log('ERROR', `Modo desconocido: "${modo}". Usa --modo=enviar, --modo=descargar, --modo=sincronizar o --modo=pdfs`);
                 process.exit(1);
         }
         log('INFO', 'Operación completada con éxito.');
@@ -561,6 +658,7 @@ async function main() {
             enviadas:    resultado.enviadas    || 0,
             descargadas: resultado.descargadas || 0,
             procesadas:  resultado.procesadas  || 0,
+            pdfsSubidos: resultado.pdfsSubidos || 0,
         });
     } catch (err) {
         log('ERROR', `Operación fallida: ${err.message}`);
@@ -575,6 +673,7 @@ async function main() {
                 enviadas:    resultado.enviadas    || 0,
                 descargadas: resultado.descargadas || 0,
                 procesadas:  resultado.procesadas  || 0,
+                pdfsSubidos: resultado.pdfsSubidos || 0,
             });
         } catch (e2) {
             log('WARN', `No se pudo guardar estado de error: ${e2.message}`);
