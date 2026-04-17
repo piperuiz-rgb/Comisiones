@@ -189,28 +189,28 @@ function crearEstructura() {
   var hojas = [
     {
       nombre: SHEET_NAMES.SHOWROOMS,
-      cabeceras: ['ID', 'Nombre', 'Comision_Pct', 'Idioma', 'Fecha_Creacion'],
-      anchos: [80, 200, 100, 60, 120]
+      cabeceras: ['ID_Odoo', 'Nombre', 'Comision_Pct', 'Idioma', 'Ultima_Actualizacion'],
+      anchos: [180, 200, 100, 60, 140]
     },
     {
       nombre: SHEET_NAMES.CLIENTES,
-      cabeceras: ['ID', 'Nombre', 'Showroom_Nombre', 'Email', 'Telefono', 'Fecha_Creacion'],
-      anchos: [80, 200, 200, 200, 120, 120]
+      cabeceras: ['ID_Odoo', 'Nombre', 'Showroom_Nombre', 'Email', 'Telefono', 'Ultima_Actualizacion'],
+      anchos: [180, 200, 200, 200, 120, 140]
     },
     {
       nombre: SHEET_NAMES.PEDIDOS,
-      cabeceras: ['ID', 'Numero', 'Cliente_Nombre', 'Fecha', 'Moneda', 'Importe', 'Fecha_Creacion'],
-      anchos: [80, 120, 200, 100, 60, 100, 120]
+      cabeceras: ['ID_Odoo', 'Numero', 'Cliente_Nombre', 'Fecha', 'Moneda', 'Importe', 'Ultima_Actualizacion'],
+      anchos: [180, 120, 200, 100, 60, 100, 140]
     },
     {
       nombre: SHEET_NAMES.FACTURAS,
-      cabeceras: ['ID', 'Numero', 'Cliente_Nombre', 'Pedidos_Ref', 'Fecha', 'Vencimiento', 'Moneda', 'Importe', 'Es_Abono', 'Facturas_Abonadas', 'Notas', 'Fecha_Creacion'],
-      anchos: [80, 120, 200, 120, 100, 100, 60, 100, 70, 150, 200, 120]
+      cabeceras: ['ID_Odoo', 'Numero', 'Cliente_Nombre', 'Pedidos_Ref', 'Fecha', 'Vencimiento', 'Moneda', 'Importe', 'Es_Abono', 'Facturas_Abonadas', 'Notas', 'Ultima_Actualizacion'],
+      anchos: [180, 120, 200, 120, 100, 100, 60, 100, 70, 150, 200, 140]
     },
     {
       nombre: SHEET_NAMES.COBROS,
-      cabeceras: ['ID', 'Factura_Ref', 'Pedido_Ref', 'Fecha', 'Moneda', 'Importe', 'Es_Ajuste', 'Fecha_Creacion'],
-      anchos: [80, 150, 120, 100, 60, 100, 70, 120]
+      cabeceras: ['ID_Odoo', 'Factura_Ref', 'Pedido_Ref', 'Fecha', 'Moneda', 'Importe', 'Es_Ajuste', 'Ultima_Actualizacion'],
+      anchos: [180, 150, 120, 100, 60, 100, 70, 140]
     },
     {
       nombre: SHEET_NAMES.LIQUIDACIONES,
