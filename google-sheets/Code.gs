@@ -3,23 +3,31 @@
 // ============================================================
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Comisiones CRI')
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('Comisiones CRI')
     .addItem('📊 Calcular Comisiones', 'calcularComisiones')
     .addSeparator()
+    .addItem('☁️ Sincronizar desde Drive', 'sincronizarDesdeDrive')
+    .addItem('📊 Estado de la sincronización', 'verEstadoSync')
+    .addSeparator()
     .addSubMenu(
-      SpreadsheetApp.getUi().createMenu('📥 Importar datos')
-        .addItem('Importar Showrooms',    'importarShowrooms')
-        .addItem('Importar Clientes',     'importarClientes')
-        .addItem('Importar Pedidos',      'importarPedidos')
-        .addItem('Importar Facturas',     'importarFacturas')
-        .addItem('Importar Cobros',       'importarCobros')
+      ui.createMenu('📥 Importar manualmente (copiar/pegar)')
+        .addItem('Importar Showrooms', 'importarShowrooms')
+        .addItem('Importar Clientes',  'importarClientes')
+        .addItem('Importar Pedidos',   'importarPedidos')
+        .addItem('Importar Facturas',  'importarFacturas')
+        .addItem('Importar Cobros',    'importarCobros')
     )
     .addSeparator()
-    .addItem('✅ Validar datos',          'validarDatos')
-    .addItem('📋 Ver histórico',          'verHistorico')
+    .addItem('✅ Validar datos',   'validarDatos')
+    .addItem('📋 Ver histórico',   'verHistorico')
     .addSeparator()
-    .addItem('⚙️  Crear estructura de hojas', 'crearEstructura')
+    .addSubMenu(
+      ui.createMenu('⚙️ Configuración')
+        .addItem('Crear estructura de hojas',          'crearEstructura')
+        .addItem('Configurar sincronización con Drive', 'configurarDriveSync')
+        .addItem('Desactivar sync automática',          'desactivarSyncAutomatica')
+    )
     .addToUi();
 }
 
