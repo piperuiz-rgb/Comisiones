@@ -94,14 +94,41 @@ function _procesarClientes(filas) {
   showrooms.forEach(function(s) { showroomNombres[String(s.Nombre || '')] = true; });
 
   var errores = [];
+
+  // Expandir filas con múltiples showrooms (separados por coma en agent_ids/name).
+  // Ejemplo: "(Showroom A) Empresa A,(Showroom B) Empresa B"
+  // → dos filas: misma cliente, distinto showroom.
+  // El ID de la segunda fila lleva sufijo "_sr2", "_sr3"... para que el upsert
+  // las trate como registros independientes.
+  var filasExpandidas = [filas[0]]; // conservar fila de cabeceras
+  for (var i = 1; i < filas.length; i++) {
+    var fila = filas[i];
+    if (!String(fila[1] || '').trim()) continue;
+
+    var agentField = String(fila[2] || '').trim();
+    // Partir por coma SOLO fuera de paréntesis para no romper "(Nombre, con coma) Empresa"
+    var agentes = _splitAgentes(agentField);
+
+    if (agentes.length <= 1) {
+      filasExpandidas.push(fila);
+    } else {
+      agentes.forEach(function(agente, idx) {
+        var filaCopia  = fila.slice();
+        filaCopia[0]   = String(fila[0]) + (idx === 0 ? '' : '_sr' + (idx + 1));
+        filaCopia[2]   = agente;
+        filasExpandidas.push(filaCopia);
+      });
+    }
+  }
+
   var resultado = _upsertEnSheet(
     SHEET_NAMES.CLIENTES,
-    filas,
+    filasExpandidas,
     function(f) { return String(f[0] || '').trim(); },
     function(f) {
       var showroomNombre = String(f[2] || '').trim();
       if (showroomNombre && !showroomNombres[showroomNombre]) {
-        errores.push('Cliente "' + f[1] + '": showroom "' + showroomNombre + '" no encontrado.');
+        errores.push('Cliente "' + f[1] + '": showroom "' + showroomNombre + '" no encontrado en Showrooms.');
       }
       return [
         String(f[0] || '').trim(),
@@ -115,6 +142,29 @@ function _procesarClientes(filas) {
     function(f) { return !String(f[1] || '').trim(); }
   );
   resultado.errores = errores;
+  return resultado;
+}
+
+// Divide "Agent A,Agent B" respetando comas dentro de paréntesis.
+// "(Showroom A) Emp A,(Showroom B) Emp B" → ["(Showroom A) Emp A", "(Showroom B) Emp B"]
+function _splitAgentes(str) {
+  var resultado = [];
+  var actual = '';
+  var nivel  = 0;
+  for (var i = 0; i < str.length; i++) {
+    var c = str[i];
+    if      (c === '(') { nivel++; actual += c; }
+    else if (c === ')') { nivel--; actual += c; }
+    else if (c === ',' && nivel === 0) {
+      var trim = actual.trim();
+      if (trim) resultado.push(trim);
+      actual = '';
+    } else {
+      actual += c;
+    }
+  }
+  var trim = actual.trim();
+  if (trim) resultado.push(trim);
   return resultado;
 }
 

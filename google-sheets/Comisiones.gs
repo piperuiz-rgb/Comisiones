@@ -20,11 +20,15 @@ function calcularComisionesEngine(datos, params) {
   var cobros    = datos.cobros;
 
   // Mapas de lookup para rendimiento
-  var showroomPorNombre = buildMap(showrooms, 'Nombre');
-  var clientePorNombre  = buildMap(clientes,  'Nombre');
-  var cobrosParaFactura = groupBy(cobros, 'Factura_Ref'); // key = número de factura
+  // NOTA: clientesPorNombre devuelve un ARRAY porque un cliente puede pertenecer
+  // a varios showrooms (ambos comisionan sobre el importe completo de la factura)
+  var showroomPorNombre  = buildMap(showrooms, 'Nombre');
+  var clientesPorNombre  = groupBy(clientes, 'Nombre');   // { nombre: [clienteA, clienteB, ...] }
+  var cobrosParaFactura  = groupBy(cobros, 'Factura_Ref');
 
   var items = [];
+  // Clave: abonoNum + '|' + showroomNombre → permite que el mismo abono aparezca
+  // para dos showrooms distintos cuando el cliente pertenece a ambos
   var abonosYaIncluidos = {};
 
   // ---- Paso 1: Facturas normales (no abonos) ----
@@ -76,64 +80,68 @@ function calcularComisionesEngine(datos, params) {
     if (!fechaCobro100) return;
     if (!fechaEnRango(fechaCobro100, fechaInicio, fechaFin)) return;
 
-    var cliente = clientePorNombre[String(factura.Cliente_Nombre || '').trim()];
-    if (!cliente) return;
-    if (filtroShowroom && String(cliente.Showroom_Nombre || '').trim() !== filtroShowroom) return;
+    var nombreCliente  = String(factura.Cliente_Nombre || '').trim();
+    var clientesFactura = clientesPorNombre[nombreCliente] || [];
+    if (clientesFactura.length === 0) return;
 
-    var showroom = showroomPorNombre[String(cliente.Showroom_Nombre || '').trim()];
-    if (!showroom) return;
+    // Iterar sobre cada showroom al que pertenece el cliente
+    clientesFactura.forEach(function(cliente) {
+      var srNombre = String(cliente.Showroom_Nombre || '').trim();
+      if (filtroShowroom && srNombre !== filtroShowroom) return;
 
-    var comisionPct = parseFloat(showroom.Comision_Pct) || 0;
+      var showroom = showroomPorNombre[srNombre];
+      if (!showroom) return;
 
-    items.push({
-      showroomNombre: String(showroom.Nombre),
-      comisionPct:    comisionPct,
-      esAbono:        false,
-      numero:         numFactura,
-      clienteNombre:  String(cliente.Nombre),
-      pedidosRef:     String(factura.Pedidos_Ref || ''),
-      fechaEmision:   toDateStr(factura.Fecha),
-      fechaCobro100:  fechaCobro100,
-      moneda:         String(factura.Moneda || 'EUR'),
-      importe:        importeFactura,
-      totalCobrado:   acumulado,
-      comision:       redondear2(importeFactura * comisionPct / 100)
-    });
+      var comisionPct = parseFloat(showroom.Comision_Pct) || 0;
 
-    // ---- Escenarios 1 y 2: abonos vinculados incluidos en el período de la factura ----
-    abonosFactura.forEach(function(abono) {
-      // ¿Estaba la factura ya saldada ANTES de este abono (excluyendo este abono)?
-      var acumSinEsteAbono = 0;
-      var yaEstabaSaldada = false;
-      for (var j = 0; j < pagos.length; j++) {
-        var pago = pagos[j];
-        if (pago.abonoNum === String(abono.Numero || '').trim()) continue;
-        if (pago.fecha > toDateStr(abono.Fecha)) break;
-        acumSinEsteAbono += pago.importe;
-        if (acumSinEsteAbono >= importeFactura) {
-          yaEstabaSaldada = true;
-          break;
+      items.push({
+        showroomNombre: String(showroom.Nombre),
+        comisionPct:    comisionPct,
+        esAbono:        false,
+        numero:         numFactura,
+        clienteNombre:  nombreCliente,
+        pedidosRef:     String(factura.Pedidos_Ref || ''),
+        fechaEmision:   toDateStr(factura.Fecha),
+        fechaCobro100:  fechaCobro100,
+        moneda:         String(factura.Moneda || 'EUR'),
+        importe:        importeFactura,
+        totalCobrado:   acumulado,
+        comision:       redondear2(importeFactura * comisionPct / 100)
+      });
+
+      // ---- Escenarios 1 y 2: abonos vinculados incluidos en el período de la factura ----
+      abonosFactura.forEach(function(abono) {
+        var numAbono  = String(abono.Numero || '').trim();
+        var claveAbono = numAbono + '|' + srNombre;
+
+        var acumSinEsteAbono = 0, yaEstabaSaldada = false;
+        for (var j = 0; j < pagos.length; j++) {
+          var pago = pagos[j];
+          if (pago.abonoNum === numAbono) continue;
+          if (pago.fecha > toDateStr(abono.Fecha)) break;
+          acumSinEsteAbono += pago.importe;
+          if (acumSinEsteAbono >= importeFactura) { yaEstabaSaldada = true; break; }
         }
-      }
 
-      if (!yaEstabaSaldada) {
-        var importeAbono = Math.abs(parseFloat(abono.Importe) || 0);
-        items.push({
-          showroomNombre: String(showroom.Nombre),
-          comisionPct:    comisionPct,
-          esAbono:        true,
-          numero:         String(abono.Numero || '').trim(),
-          clienteNombre:  String(cliente.Nombre),
-          pedidosRef:     String(abono.Facturas_Abonadas || ''),
-          fechaEmision:   toDateStr(abono.Fecha),
-          fechaCobro100:  fechaCobro100,
-          moneda:         String(abono.Moneda || factura.Moneda || 'EUR'),
-          importe:        -importeAbono,
-          totalCobrado:   0,
-          comision:       redondear2(-importeAbono * comisionPct / 100)
-        });
-        abonosYaIncluidos[String(abono.Numero || '').trim()] = true;
-      }
+        if (!yaEstabaSaldada) {
+          var importeAbono = Math.abs(parseFloat(abono.Importe) || 0);
+          items.push({
+            showroomNombre: String(showroom.Nombre),
+            comisionPct:    comisionPct,
+            esAbono:        true,
+            numero:         numAbono,
+            clienteNombre:  nombreCliente,
+            pedidosRef:     String(abono.Facturas_Abonadas || ''),
+            fechaEmision:   toDateStr(abono.Fecha),
+            fechaCobro100:  fechaCobro100,
+            moneda:         String(abono.Moneda || factura.Moneda || 'EUR'),
+            importe:        -importeAbono,
+            totalCobrado:   0,
+            comision:       redondear2(-importeAbono * comisionPct / 100)
+          });
+          abonosYaIncluidos[claveAbono] = true;
+        }
+      });
     });
   });
 
@@ -191,29 +199,36 @@ function calcularComisionesEngine(datos, params) {
 
     if (!todasYaSaldadas) return;
 
-    var cliente = clientePorNombre[String(abono.Cliente_Nombre || '').trim()];
-    if (!cliente) return;
-    if (filtroShowroom && String(cliente.Showroom_Nombre || '').trim() !== filtroShowroom) return;
+    var nombreClienteAbono  = String(abono.Cliente_Nombre || '').trim();
+    var clientesAbono = clientesPorNombre[nombreClienteAbono] || [];
+    if (clientesAbono.length === 0) return;
 
-    var showroom = showroomPorNombre[String(cliente.Showroom_Nombre || '').trim()];
-    if (!showroom) return;
+    clientesAbono.forEach(function(cliente) {
+      var srNombre   = String(cliente.Showroom_Nombre || '').trim();
+      var claveAbono = numAbono + '|' + srNombre;
+      if (abonosYaIncluidos[claveAbono]) return;
+      if (filtroShowroom && srNombre !== filtroShowroom) return;
 
-    var comisionPct = parseFloat(showroom.Comision_Pct) || 0;
-    var importeAbono = Math.abs(parseFloat(abono.Importe) || 0);
+      var showroom = showroomPorNombre[srNombre];
+      if (!showroom) return;
 
-    items.push({
-      showroomNombre: String(showroom.Nombre),
-      comisionPct:    comisionPct,
-      esAbono:        true,
-      numero:         numAbono,
-      clienteNombre:  String(cliente.Nombre),
-      pedidosRef:     String(abono.Facturas_Abonadas || ''),
-      fechaEmision:   fechaAbono,
-      fechaCobro100:  fechaAbono,
-      moneda:         String(abono.Moneda || 'EUR'),
-      importe:        -importeAbono,
-      totalCobrado:   0,
-      comision:       redondear2(-importeAbono * comisionPct / 100)
+      var comisionPct  = parseFloat(showroom.Comision_Pct) || 0;
+      var importeAbono = Math.abs(parseFloat(abono.Importe) || 0);
+
+      items.push({
+        showroomNombre: String(showroom.Nombre),
+        comisionPct:    comisionPct,
+        esAbono:        true,
+        numero:         numAbono,
+        clienteNombre:  nombreClienteAbono,
+        pedidosRef:     String(abono.Facturas_Abonadas || ''),
+        fechaEmision:   fechaAbono,
+        fechaCobro100:  fechaAbono,
+        moneda:         String(abono.Moneda || 'EUR'),
+        importe:        -importeAbono,
+        totalCobrado:   0,
+        comision:       redondear2(-importeAbono * comisionPct / 100)
+      });
     });
   });
 
