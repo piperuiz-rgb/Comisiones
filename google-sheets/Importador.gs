@@ -189,11 +189,7 @@ function _procesarPedidos(filas) {
         _parseFecha(f[2]),                            // Fecha
         String(f[10] || 'EUR').trim().toUpperCase(),  // Moneda
         parseFloat(f[4]) || 0,                       // Importe (Total)
-        parseFloat(f[5]) || 0,                       // Importe_Facturado
-        parseFloat(f[6]) || 0,                       // Importe_No_Facturado
-        parseFloat(f[7]) || 0,                       // Importe_Pendiente
-        parseFloat(f[8]) || 0,                       // Importe_Reembolsado
-        String(f[9]  || '').trim(),                  // Condiciones_Pago
+        String(f[9]  || '').trim(),                  // Condiciones_Pago (NET30, NET60...)
         new Date()
       ];
     },
