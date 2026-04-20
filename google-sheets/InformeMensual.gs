@@ -156,13 +156,16 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
 
     grupo.items.forEach(function(item) {
       var colorFila = item.esAbono ? '#fff3cd' : '#ffffff';
+      // El total cobrado nunca puede superar el importe de la factura: si hay
+      // anticipo de pedido el exceso queda como saldo a favor del cliente.
+      var cobradoMostrar = item.esAbono ? '' : Math.min(item.totalCobrado, item.importe);
       hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
         item.numero,
         item.fechaCobro100,
         item.clienteNombre,
         item.moneda,
         item.importe,
-        item.esAbono ? '' : item.totalCobrado   // abonos no tienen totalCobrado propio
+        cobradoMostrar
       ]]).setBackground(colorFila);
 
       // Formato numérico para importes
@@ -172,7 +175,7 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
       var m = item.moneda || 'EUR';
       if (!subtotalesPorMoneda[m]) subtotalesPorMoneda[m] = { importe: 0, cobrado: 0, num: 0 };
       subtotalesPorMoneda[m].importe = redondear2(subtotalesPorMoneda[m].importe + item.importe);
-      subtotalesPorMoneda[m].cobrado = redondear2(subtotalesPorMoneda[m].cobrado + (item.esAbono ? 0 : item.totalCobrado));
+      subtotalesPorMoneda[m].cobrado = redondear2(subtotalesPorMoneda[m].cobrado + (item.esAbono ? 0 : cobradoMostrar));
       subtotalesPorMoneda[m].num++;
       fila++;
     });
