@@ -108,7 +108,7 @@ function _crearOLimpiarTab(nombre) {
 
 function _escribirTabMensual(hoja, resultado, mes, anyo) {
   var nombreMes = NOMBRES_MES[mes - 1];
-  var NUM_COLS  = 6;
+  var NUM_COLS  = 9;
 
   // ── Título ──
   hoja.getRange(1, 1, 1, NUM_COLS).merge()
@@ -127,7 +127,7 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
     .setFontStyle('italic')
     .setHorizontalAlignment('center');
 
-  var CABECERAS = ['Nº Factura', 'Fecha cobro 100%', 'Cliente', 'Moneda', 'Importe factura', 'Total cobrado'];
+  var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Fecha cobro 100%', 'Pedido origen', 'Ref. cliente', 'Cliente', 'Moneda', 'Importe factura', 'Total cobrado'];
 
   var fila = 4;
   var showroomsOrden = Object.keys(resultado.porShowroom);
@@ -161,7 +161,10 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
       var cobradoMostrar = item.esAbono ? '' : Math.min(item.totalCobrado, item.importe);
       hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
         item.numero,
+        item.fechaEmision,
         item.fechaCobro100,
+        item.pedidosRef,
+        item.refCliente || '',
         item.clienteNombre,
         item.moneda,
         item.importe,
@@ -169,12 +172,12 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
       ]]).setBackground(colorFila);
 
       // Formato numérico para importes
-      hoja.getRange(fila, 5).setNumberFormat('#,##0.00');
-      if (!item.esAbono) hoja.getRange(fila, 6).setNumberFormat('#,##0.00');
+      hoja.getRange(fila, 8).setNumberFormat('#,##0.00');
+      if (!item.esAbono) hoja.getRange(fila, 9).setNumberFormat('#,##0.00');
 
       var m = item.moneda || 'EUR';
       if (!subtotalesPorMoneda[m]) subtotalesPorMoneda[m] = { importe: 0, cobrado: 0, num: 0 };
-      subtotalesPorMoneda[m].importe = redondear2(subtotalesPorMoneda[m].importe + item.importe);
+      subtotalesPorMoneda[m].importe = redondear2(subtotalesPorMoneda[m].importe + (item.esAbono ? item.importe : Math.abs(item.importe)));
       subtotalesPorMoneda[m].cobrado = redondear2(subtotalesPorMoneda[m].cobrado + (item.esAbono ? 0 : cobradoMostrar));
       subtotalesPorMoneda[m].num++;
       fila++;
@@ -186,12 +189,12 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
       if (!t || t.num === 0) return;
       hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
         'Subtotal ' + moneda + ' (' + t.num + ' línea' + (t.num !== 1 ? 's' : '') + ')',
-        '', '', moneda,
+        '', '', '', '', moneda, moneda,
         t.importe,
         t.cobrado
       ]]).setBackground('#e8f5e9').setFontWeight('bold');
-      hoja.getRange(fila, 5).setNumberFormat('#,##0.00');
-      hoja.getRange(fila, 6).setNumberFormat('#,##0.00');
+      hoja.getRange(fila, 8).setNumberFormat('#,##0.00');
+      hoja.getRange(fila, 9).setNumberFormat('#,##0.00');
       fila++;
     });
 
@@ -199,12 +202,15 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
   });
 
   // ── Ajuste de columnas ──
-  hoja.setColumnWidth(1, 130); // Nº Factura
-  hoja.setColumnWidth(2, 130); // Fecha
-  hoja.setColumnWidth(3, 240); // Cliente
-  hoja.setColumnWidth(4, 70);  // Moneda
-  hoja.setColumnWidth(5, 120); // Importe
-  hoja.setColumnWidth(6, 120); // Cobrado
+  hoja.setColumnWidth(1, 140); // Nº Factura
+  hoja.setColumnWidth(2, 110); // Fecha emisión
+  hoja.setColumnWidth(3, 110); // Fecha cobro 100%
+  hoja.setColumnWidth(4, 110); // Pedido origen
+  hoja.setColumnWidth(5, 160); // Ref. cliente (Joor)
+  hoja.setColumnWidth(6, 220); // Cliente
+  hoja.setColumnWidth(7, 65);  // Moneda
+  hoja.setColumnWidth(8, 120); // Importe factura
+  hoja.setColumnWidth(9, 120); // Total cobrado
   hoja.setFrozenRows(0);
 }
 

@@ -233,7 +233,7 @@ function _procesarFacturas(filas) {
         importe,                                     // Importe
         esAbono,                                     // Es_Abono
         facturasAbonadas,                            // Facturas_Abonadas
-        '',                                          // Notas
+        esAbono ? '' : ref,                          // Notas → ref cliente (PO Joor) para facturas normales
         new Date()
       ];
     },
@@ -264,6 +264,11 @@ function _procesarCobros(filas) {
 
       if (facturaRef && !facturaNums[facturaRef.toLowerCase()]) {
         errores.push('Cobro "' + f[7] + '": factura "' + facturaRef + '" no encontrada.');
+      }
+      // A partir de abril 2026 todo cobro posted debe tener factura conciliada
+      var fechaCobro = _parseFecha(f[2]);
+      if (!facturaRef && fechaCobro >= '2026-04-01') {
+        errores.push('⚠️ Cobro "' + f[7] + '" (' + fechaCobro + '): sin factura conciliada — introduce la referencia manualmente en Gextia.');
       }
       return [
         String(f[7] || '').trim(),                   // ID_Odoo = Número

@@ -101,6 +101,7 @@ function calcularComisionesEngine(datos, params) {
         numero:         numFactura,
         clienteNombre:  nombreCliente,
         pedidosRef:     String(factura.Pedidos_Ref || ''),
+        refCliente:     String(factura.Notas || ''),
         fechaEmision:   toDateStr(factura.Fecha),
         fechaCobro100:  fechaCobro100,
         moneda:         String(factura.Moneda || 'EUR'),
