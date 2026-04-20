@@ -175,12 +175,12 @@ function _leerExcelDesdeDrive(fileId) {
   var archivo = DriveApp.getFileById(fileId);
   var blob    = archivo.getBlob();
 
-  // Convertir xlsx a Google Sheets temporalmente (requiere Drive API avanzada)
-  var recurso = {
-    title:    'TEMP_CRI_' + new Date().getTime(),
-    mimeType: MimeType.GOOGLE_SHEETS
-  };
-  var convertido = Drive.Files.insert(recurso, blob, { convert: true });
+  // Convertir xlsx a Google Sheets temporalmente (Drive API v3)
+  // Al especificar mimeType Google Sheets con un blob xlsx, Drive convierte automáticamente
+  var convertido = Drive.Files.create(
+    { name: 'TEMP_CRI_' + new Date().getTime(), mimeType: MimeType.GOOGLE_SHEETS },
+    blob
+  );
 
   try {
     var ss    = SpreadsheetApp.openById(convertido.id);
