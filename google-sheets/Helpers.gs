@@ -9,9 +9,6 @@ var SHEET_NAMES = {
   FACTURAS:     'Facturas',
   COBROS:       'Cobros',
   LIQUIDACIONES:'Liquidaciones',
-  PARAMS:       'Informe_Parametros',
-  RESUMEN:      'Informe_Resumen',
-  DETALLE:      'Informe_Detalle',
   HISTORICO:    'Historico_Informes',
   TEMP:         'TEMP_Import'
 };
@@ -40,17 +37,6 @@ function cargarTodosLosDatos() {
     clientes:   getSheetData(SHEET_NAMES.CLIENTES),
     facturas:   getSheetData(SHEET_NAMES.FACTURAS),
     cobros:     getSheetData(SHEET_NAMES.COBROS)
-  };
-}
-
-function leerParametrosInforme() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(SHEET_NAMES.PARAMS);
-  if (!sheet) throw new Error('No se encontró la hoja: ' + SHEET_NAMES.PARAMS);
-  return {
-    fechaInicio:     sheet.getRange('C2').getValue(),
-    fechaFin:        sheet.getRange('C3').getValue(),
-    showroomNombre:  sheet.getRange('C4').getValue() || null
   };
 }
 
