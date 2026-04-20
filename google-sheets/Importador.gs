@@ -168,7 +168,13 @@ function _procesarPedidos(filas) {
   // col0: Referencia del pedido (clave)
   // col1: Cliente (formato "(Showroom) Nombre")
   // col2: Fecha de pedido
+  // col3: Referencia del cliente (PO Joor)
   // col4: Total
+  // col5: Importe facturado
+  // col6: Importe no facturado
+  // col7: Importe pendiente
+  // col8: Importe total reembolsado
+  // col9: Condiciones de pago
   // col10: Moneda
   return _upsertEnSheet(
     SHEET_NAMES.PEDIDOS,
@@ -176,12 +182,18 @@ function _procesarPedidos(filas) {
     function(f) { return String(f[0] || '').trim(); },
     function(f) {
       return [
-        String(f[0] || '').trim(),                   // ID_Odoo = referencia pedido
-        String(f[0] || '').trim(),                   // Numero
-        _extractNombre(f[1]),                        // Cliente_Nombre (sin prefijo showroom)
-        _parseFecha(f[2]),                           // Fecha
-        String(f[10] || 'EUR').trim().toUpperCase(), // Moneda
-        parseFloat(f[4]) || 0,                      // Importe
+        String(f[0]  || '').trim(),                   // ID_Odoo = referencia pedido
+        String(f[0]  || '').trim(),                   // Numero
+        _extractNombre(f[1]),                         // Cliente_Nombre
+        String(f[3]  || '').trim(),                   // Referencia_Cliente (PO Joor)
+        _parseFecha(f[2]),                            // Fecha
+        String(f[10] || 'EUR').trim().toUpperCase(),  // Moneda
+        parseFloat(f[4]) || 0,                       // Importe (Total)
+        parseFloat(f[5]) || 0,                       // Importe_Facturado
+        parseFloat(f[6]) || 0,                       // Importe_No_Facturado
+        parseFloat(f[7]) || 0,                       // Importe_Pendiente
+        parseFloat(f[8]) || 0,                       // Importe_Reembolsado
+        String(f[9]  || '').trim(),                  // Condiciones_Pago
         new Date()
       ];
     },
