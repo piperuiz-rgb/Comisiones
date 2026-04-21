@@ -334,19 +334,28 @@ function _escribirTabEmitidas(hoja, emitidas, mes, anyo) {
   hoja.setFrozenRows(0);
 }
 
-// ---- Email con ambos informes ----
+// ---- Email con adjuntos Excel ----
 
 function _enviarEmailResumen(cobradas, emitidas, mes, anyo, nombreTabCobradas, nombreTabEmitidas) {
   var nombreMes = NOMBRES_MES[mes - 1];
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var emailDest = Session.getActiveUser().getEmail();
 
-  function _urlTab(nombre) {
-    var s = ss.getSheetByName(nombre);
-    return s ? ss.getUrl() + '#gid=' + s.getSheetId() : ss.getUrl();
+  // Generar los dos archivos Excel adjuntos
+  var adjuntos = [];
+  var hojaCobradas = ss.getSheetByName(nombreTabCobradas);
+  var hojaEmitidas = ss.getSheetByName(nombreTabEmitidas);
+  if (hojaCobradas) {
+    try { adjuntos.push(_hojaAExcelBlob(hojaCobradas, nombreTabCobradas)); }
+    catch(e) { Logger.log('Excel cobradas: ' + e.message); }
+  }
+  if (hojaEmitidas) {
+    try { adjuntos.push(_hojaAExcelBlob(hojaEmitidas, nombreTabEmitidas)); }
+    catch(e) { Logger.log('Excel emitidas: ' + e.message); }
   }
 
-  function _tablaShowrooms(porShowroom, conCobrado) {
+  // Cuerpo del correo: resumen de totales por sección
+  function _bloqueResumen(porShowroom) {
     var filas = '';
     var totalEUR = 0, totalUSD = 0;
     Object.keys(porShowroom).forEach(function(srNombre) {
@@ -357,70 +366,79 @@ function _enviarEmailResumen(cobradas, emitidas, mes, anyo, nombreTabCobradas, n
         var num = grupo.items.filter(function(i) { return i.moneda === moneda; }).length;
         filas +=
           '<tr style="border-bottom:1px solid #eee;">' +
-          '<td style="padding:7px 12px;">' + srNombre + '</td>' +
-          '<td style="padding:7px 12px;text-align:center;">' + moneda + '</td>' +
-          '<td style="padding:7px 12px;text-align:right;font-weight:bold;">' + _formatNum(Math.abs(t.facturado)) + '</td>' +
-          '<td style="padding:7px 12px;text-align:center;">' + num + '</td>' +
+          '<td style="padding:6px 12px;">'                                        + srNombre + '</td>' +
+          '<td style="padding:6px 12px;text-align:center;">'                      + moneda   + '</td>' +
+          '<td style="padding:6px 12px;text-align:right;font-weight:bold;">'      + _formatNum(Math.abs(t.facturado)) + '</td>' +
+          '<td style="padding:6px 12px;text-align:center;color:#666;">'           + num      + '</td>' +
           '</tr>';
         if (moneda === 'EUR') totalEUR = redondear2(totalEUR + t.facturado);
         if (moneda === 'USD') totalUSD = redondear2(totalUSD + t.facturado);
       });
     });
-    var totales = '';
-    if (totalEUR !== 0) totales += '<p style="margin:4px 0;"><strong>Total EUR: ' + _formatNum(Math.abs(totalEUR)) + ' €</strong></p>';
-    if (totalUSD !== 0) totales += '<p style="margin:4px 0;"><strong>Total USD: $' + _formatNum(Math.abs(totalUSD)) + '</strong></p>';
-    return { filas: filas, totales: totales };
+    if (!filas) return '<p style="color:#888;margin:0;">Sin datos este mes.</p>';
+    var pie = '';
+    if (totalEUR) pie += '<strong>Total EUR: ' + _formatNum(Math.abs(totalEUR)) + ' €</strong><br>';
+    if (totalUSD) pie += '<strong>Total USD: $' + _formatNum(Math.abs(totalUSD)) + '</strong>';
+    return '<table style="border-collapse:collapse;width:100%;font-size:13px;">' +
+           '<thead><tr style="background:#dce6f1;">' +
+           '<th style="padding:6px 12px;text-align:left;">Showroom</th>' +
+           '<th style="padding:6px 12px;">Moneda</th>' +
+           '<th style="padding:6px 12px;text-align:right;">Total facturado</th>' +
+           '<th style="padding:6px 12px;">Líneas</th>' +
+           '</tr></thead><tbody>' + filas + '</tbody></table>' +
+           '<p style="margin:10px 0 0;">' + pie + '</p>';
   }
 
-  var tCobradas = _tablaShowrooms(cobradas.porShowroom, true);
-  var tEmitidas = _tablaShowrooms(emitidas.porShowroom, false);
-
-  function _seccion(titulo, subtitulo, color, filas, totales, urlTab, nombreTab) {
-    var contenido = filas
-      ? '<table style="border-collapse:collapse;width:100%;font-size:13px;">' +
-        '<thead><tr style="background:#dce6f1;">' +
-        '<th style="padding:7px 12px;text-align:left;">Showroom</th>' +
-        '<th style="padding:7px 12px;">Moneda</th>' +
-        '<th style="padding:7px 12px;text-align:right;">Total</th>' +
-        '<th style="padding:7px 12px;">Líneas</th>' +
-        '</tr></thead><tbody>' + filas + '</tbody></table>' +
-        '<div style="margin-top:10px;">' + totales + '</div>'
-      : '<p style="color:#888;">Sin datos este mes.</p>';
-
-    return '<div style="margin-bottom:28px;">' +
+  function _bloque(titulo, subtitulo, color, cuerpo) {
+    return '<div style="margin-bottom:24px;">' +
       '<div style="background:' + color + ';color:#fff;padding:10px 16px;border-radius:4px 4px 0 0;">' +
       '<strong style="font-size:14px;">' + titulo + '</strong>' +
-      '<span style="opacity:.7;font-size:12px;margin-left:10px;">' + subtitulo + '</span>' +
+      '<span style="opacity:.75;font-size:12px;margin-left:10px;">' + subtitulo + '</span>' +
       '</div>' +
       '<div style="border:1px solid #ddd;border-top:none;padding:14px;border-radius:0 0 4px 4px;">' +
-      contenido +
-      '<div style="margin-top:14px;">' +
-      '<a href="' + urlTab + '" style="background:' + color + ';color:#fff;padding:8px 18px;' +
-      'text-decoration:none;border-radius:4px;font-size:12px;">Ver ' + nombreTab + ' →</a>' +
-      '</div></div></div>';
+      cuerpo + '</div></div>';
   }
 
   var html =
     '<div style="font-family:Arial,sans-serif;max-width:660px;color:#222;">' +
-    '<div style="background:#1a1a2e;color:#fff;padding:14px 20px;">' +
+    '<div style="background:#1a1a2e;color:#fff;padding:14px 20px;border-radius:4px 4px 0 0;">' +
     '<h2 style="margin:0;font-size:18px;">Informe mensual — ' + nombreMes + ' ' + anyo + '</h2>' +
-    '<p style="margin:4px 0;opacity:.7;font-size:13px;">Charo Ruiz Ibiza</p>' +
-    '</div>' +
+    '<p style="margin:4px 0 0;opacity:.7;font-size:13px;">Charo Ruiz Ibiza · ' +
+    (adjuntos.length > 0 ? adjuntos.length + ' archivo(s) Excel adjunto(s)' : 'sin adjuntos') +
+    '</p></div>' +
     '<div style="padding:20px;">' +
-    _seccion('Facturas cobradas al 100%', cobradas.items.length + ' facturas',
-             '#1a1a2e', tCobradas.filas, tCobradas.totales,
-             _urlTab(nombreTabCobradas), nombreTabCobradas) +
-    _seccion('Facturas emitidas', emitidas.items.length + ' facturas',
-             '#0f3460', tEmitidas.filas, tEmitidas.totales,
-             _urlTab(nombreTabEmitidas), nombreTabEmitidas) +
-    '<p style="margin-top:8px;color:#aaa;font-size:11px;">Generado automáticamente · Comisiones CRI</p>' +
+    _bloque('Facturas cobradas al 100%', cobradas.items.length + ' facturas', '#1a1a2e',
+            _bloqueResumen(cobradas.porShowroom)) +
+    _bloque('Facturas emitidas', emitidas.items.length + ' facturas', '#0f3460',
+            _bloqueResumen(emitidas.porShowroom)) +
+    '<p style="color:#aaa;font-size:11px;margin-top:4px;">Generado automáticamente · Comisiones CRI</p>' +
     '</div></div>';
 
   MailApp.sendEmail({
-    to:       emailDest,
-    subject:  'Informe mensual — ' + nombreMes + ' ' + anyo,
-    htmlBody: html
+    to:          emailDest,
+    subject:     'Informe mensual — ' + nombreMes + ' ' + anyo,
+    htmlBody:    html,
+    attachments: adjuntos
   });
+}
+
+// Exporta una pestaña del Google Sheet como blob .xlsx adjuntable al correo.
+// Crea un spreadsheet temporal, copia la pestaña, exporta y lo elimina.
+function _hojaAExcelBlob(hoja, nombreArchivo) {
+  var tempSS = SpreadsheetApp.create('_TEMP_CRI_' + new Date().getTime());
+  var tempId = tempSS.getId();
+  try {
+    hoja.copyTo(tempSS);
+    tempSS.deleteSheet(tempSS.getSheets()[0]); // eliminar hoja vacía por defecto
+    var url = 'https://docs.google.com/spreadsheets/d/' + tempId +
+              '/export?format=xlsx&portrait=false';
+    var blob = UrlFetchApp.fetch(url, {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }
+    }).getBlob().setName(nombreArchivo + '.xlsx');
+    return blob;
+  } finally {
+    DriveApp.getFileById(tempId).setTrashed(true);
+  }
 }
 
 // ---- Utilidades ----
