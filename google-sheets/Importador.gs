@@ -201,54 +201,68 @@ function _procesarPedidos(filas) {
 }
 
 function _procesarFacturas(filas) {
-  // Columnas Gextia:
-  // col0: id (external id Odoo)
-  // col1: name (INV/... o RINV/... para abonos)
-  // col2: ref (referencia cliente; a veces "Reversión de: INV/...")
-  // col3: amount_total_in_currency_signed (ya con signo: negativo para abonos)
-  // col4: currency_id
-  // col5: invoice_date
-  // col7: partner_id (formato "(Showroom) Nombre" o solo "Nombre")
-  // col8: invoice_date_due
-  // col9: invoice_origin (referencia del pedido, p.ej. BVEJ3605)
+  // Columnas Gextia (Facturas.xlsx):
+  // col0: id            — ID externo Odoo (no se usa como clave, poco estable)
+  // col1: name          — Número de factura: INV/AAAA/XXXXXX  o  RINV/... para abonos
+  // col2: ref           — Ref. cliente: "PO: XXXXXXXX" en facturas normales;
+  //                       "Reversión de: INV/..." en abonos automáticos;
+  //                       texto libre en abonos manuales
+  // col3: amount_total_in_currency_signed — importe con signo (negativo en abonos)
+  // col4: currency_id   — EUR / USD
+  // col5: invoice_date  — fecha emisión
+  // col6: invoice_payment_term_id — condiciones de pago (no se almacena)
+  // col7: partner_id    — cliente, formato "(Showroom) Nombre" o "Nombre"
+  // col8: invoice_date_due — fecha vencimiento
+  // col9: invoice_origin   — referencia del pedido origen (BVEJ3605, S00211…)
+  // col10: picking_ids/dhl_express_carrier_tracking_ref — albarán (no se almacena)
+  //
+  // CLAVE: col1 (name = INV/… o RINV/…) — único, estable entre exportaciones
   return _upsertEnSheet(
     SHEET_NAMES.FACTURAS,
     filas,
-    function(f) { return String(f[0] || '').trim(); },
+    function(f) { return String(f[1] || '').trim(); },   // clave = Numero
     function(f) {
       var nombre  = String(f[1] || '').trim();
       var esAbono = nombre.toUpperCase().indexOf('RINV/') === 0 ||
-                    (parseFloat(f[3]) || 0) < 0;
+                    (parseFloat(String(f[3] || '').replace(',', '.')) || 0) < 0;
 
-      var importe = parseFloat(f[3]) || 0;
-      // Normalizar: abonos siempre negativos, facturas siempre positivas
+      var importe = parseFloat(String(f[3] || '').replace(',', '.')) || 0;
       if (esAbono && importe > 0) importe = -importe;
       if (!esAbono && importe < 0) importe = Math.abs(importe);
 
-      // Extraer factura vinculada del campo ref ("Reversión de: INV/...")
       var ref = String(f[2] || '').trim();
+
+      // Extraer factura(s) referenciada(s) del campo ref de los abonos
+      // Solo cuando dice "Reversión de: INV/..." — extraer únicamente los INV/
       var facturasAbonadas = '';
       if (esAbono && ref) {
         var m = ref.match(/[Rr]eversi[oó]n\s+de:\s*(.+)/);
-        if (m) facturasAbonadas = m[1].trim();
+        if (m) {
+          var invRefs = m[1].match(/(?:RINV\/|INV\/)[\w\/]+/g);
+          facturasAbonadas = invRefs ? invRefs.join(', ') : m[1].split(',')[0].trim();
+        }
       }
 
+      // Para facturas normales, guardar el número de pedido Joor en Notas
+      // (eliminando el prefijo "PO: " que añade Gextia)
+      var notas = esAbono ? '' : ref.replace(/^PO:\s*/i, '').trim();
+
       return [
-        String(f[0] || '').trim(),                  // ID_Odoo
-        nombre,                                      // Numero
-        _extractNombre(f[7]),                        // Cliente_Nombre
-        String(f[9]  || '').trim(),                  // Pedidos_Ref (invoice_origin)
-        _parseFecha(f[5]),                           // Fecha
-        _parseFecha(f[8]),                           // Vencimiento
-        String(f[4]  || 'EUR').trim().toUpperCase(), // Moneda
-        importe,                                     // Importe
-        esAbono,                                     // Es_Abono
-        facturasAbonadas,                            // Facturas_Abonadas
-        esAbono ? '' : ref,                          // Notas → ref cliente (PO Joor) para facturas normales
-        new Date()
+        nombre,                                              // ID_Odoo = Numero (clave estable)
+        nombre,                                              // Numero
+        _extractNombre(f[7]),                                // Cliente_Nombre
+        String(f[9]  || '').trim(),                          // Pedidos_Ref (invoice_origin)
+        _parseFecha(f[5]),                                   // Fecha
+        _parseFecha(f[8]),                                   // Vencimiento
+        String(f[4]  || 'EUR').trim().toUpperCase(),         // Moneda
+        importe,                                             // Importe
+        esAbono,                                             // Es_Abono
+        facturasAbonadas,                                    // Facturas_Abonadas
+        notas,                                               // Notas (Pedido Joor sin prefijo)
+        new Date()                                           // Ultima_Actualizacion
       ];
     },
-    function(f) { return !String(f[0] || '').trim() || !String(f[1] || '').trim(); }
+    function(f) { return !String(f[1] || '').trim(); }      // saltar si no hay nombre
   );
 }
 
