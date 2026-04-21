@@ -162,6 +162,11 @@ function sincronizarDesdeDrive() {
 
   Logger.log('DriveSync completado: ' + msg);
 
+  // Actualizar resumen de pedidos si se procesaron archivos
+  if (totalArchivos > 0) {
+    try { actualizarResumenPedidos(); } catch(e) { Logger.log('actualizarResumenPedidos: ' + e.message); }
+  }
+
   try {
     SpreadsheetApp.getUi().alert('☁️ Sincronización completada', msg, SpreadsheetApp.getUi().ButtonSet.OK);
   } catch(e) {

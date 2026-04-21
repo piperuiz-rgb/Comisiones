@@ -156,3 +156,160 @@ function formatMoneda(valor, moneda) {
   abs = abs.replace('.', 'TEMP').replace(/\./g, ',').replace('TEMP', '.');
   return (valor < 0 ? '-' : '') + (moneda === 'USD' ? '$' + abs : abs + ' €');
 }
+
+// ============================================================
+// Resumen de pedidos — añade sub-filas de cobros y facturas
+// bajo cada fila de pedido, y actualiza las columnas derivadas
+// Total_Cobrado y Facturas_Ref.
+//
+// Las sub-filas tienen col0 vacío, por lo que getSheetData()
+// y _upsertEnSheet() las ignoran automáticamente.
+// Se llama al importar Pedidos, Facturas o Cobros.
+// ============================================================
+
+var PEDIDOS_NUM_COLS = 11; // 9 originales + Total_Cobrado + Facturas_Ref
+
+function actualizarResumenPedidos() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAMES.PEDIDOS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+
+  // Asegurar que las nuevas cabeceras existen
+  var maxSheetCols = Math.max(sheet.getLastColumn(), PEDIDOS_NUM_COLS);
+  var headerRow = sheet.getRange(1, 1, 1, maxSheetCols).getValues()[0];
+  if (!headerRow[9]) {
+    sheet.getRange(1, 10).setValue('Total_Cobrado')
+         .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setColumnWidth(10, 110);
+  }
+  if (!headerRow[10]) {
+    sheet.getRange(1, 11).setValue('Facturas_Ref')
+         .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setColumnWidth(11, 200);
+  }
+
+  // Datos relacionados (getSheetData filtra sub-filas por col0 vacío)
+  var cobros       = getSheetData(SHEET_NAMES.COBROS);
+  var facturasNorm = getSheetData(SHEET_NAMES.FACTURAS).filter(function(f) {
+    return !(f.Es_Abono === true || f.Es_Abono === 'TRUE' || f.Es_Abono === 'true');
+  });
+
+  var cobrosDirectosPorPedido = groupBy(
+    cobros.filter(function(c) { return !String(c.Factura_Ref || '').trim(); }),
+    'Pedido_Ref'
+  );
+  var cobrosParaFactura  = groupBy(cobros, 'Factura_Ref');
+  var facturasParaPedido = groupBy(facturasNorm, 'Pedidos_Ref');
+
+  // Leer todas las filas de la hoja (include sub-filas existentes)
+  var lastRow = sheet.getLastRow();
+  var allData = sheet.getRange(2, 1, lastRow - 1, maxSheetCols).getValues();
+
+  // Solo filas principales (col0 no vacío)
+  var filasPrincipales = allData.filter(function(row) {
+    return String(row[0] || '').trim() !== '';
+  });
+  if (filasPrincipales.length === 0) return;
+
+  // Construir nuevo contenido: principales + sub-filas
+  var resultado = [];
+
+  filasPrincipales.forEach(function(pedidoRow) {
+    var numPedido = String(pedidoRow[0] || '').trim();
+
+    var facturasDelPedido = (facturasParaPedido[numPedido] || []).slice()
+      .sort(function(a, b) { return toDateStr(a.Fecha) < toDateStr(b.Fecha) ? -1 : 1; });
+
+    var cobrosDirectos = (cobrosDirectosPorPedido[numPedido] || []).slice()
+      .sort(function(a, b) { return toDateStr(a.Fecha) < toDateStr(b.Fecha) ? -1 : 1; });
+
+    // Total cobrado: anticipos directos + cobros sobre facturas del pedido
+    var totalCobrado = 0;
+    cobrosDirectos.forEach(function(c) { totalCobrado += parseFloat(c.Importe) || 0; });
+    facturasDelPedido.forEach(function(f) {
+      (cobrosParaFactura[String(f.Numero || '').trim()] || [])
+        .forEach(function(c) { totalCobrado += parseFloat(c.Importe) || 0; });
+    });
+    totalCobrado = redondear2(totalCobrado);
+
+    var facturasRef = facturasDelPedido.map(function(f) { return f.Numero; }).join(', ');
+
+    // Fila principal con columnas derivadas
+    resultado.push({ tipo: 'principal', fila: [
+      pedidoRow[0] || '', pedidoRow[1] || '', pedidoRow[2] || '', pedidoRow[3] || '',
+      pedidoRow[4] || '', pedidoRow[5] || '', pedidoRow[6] || '', pedidoRow[7] || '',
+      pedidoRow[8] || '',
+      totalCobrado !== 0 ? totalCobrado : '',
+      facturasRef
+    ]});
+
+    // Sub-filas: cobros directos (anticipos sin factura)
+    cobrosDirectos.forEach(function(c) {
+      resultado.push({ tipo: 'cobro', fila: _subfilaCobro(c) });
+    });
+
+    // Sub-filas: cada factura y sus cobros
+    facturasDelPedido.forEach(function(factura) {
+      resultado.push({ tipo: 'factura', fila: _subfilaFactura(factura) });
+      (cobrosParaFactura[String(factura.Numero || '').trim()] || []).slice()
+        .sort(function(a, b) { return toDateStr(a.Fecha) < toDateStr(b.Fecha) ? -1 : 1; })
+        .forEach(function(c) {
+          resultado.push({ tipo: 'cobro', fila: _subfilaCobro(c) });
+        });
+    });
+  });
+
+  // Asegurar que la hoja tiene filas suficientes
+  var totalFilas = resultado.length;
+  if (totalFilas + 1 > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), totalFilas + 1 - sheet.getMaxRows());
+  }
+
+  // Limpiar contenido y formato de filas de datos
+  sheet.getRange(2, 1, lastRow - 1, maxSheetCols).clearContent().clearFormat();
+
+  // Escribir todo en bloque
+  var matrix = resultado.map(function(item) { return item.fila; });
+  sheet.getRange(2, 1, totalFilas, PEDIDOS_NUM_COLS).setValues(matrix);
+
+  // Eliminar filas sobrantes
+  if (lastRow - 1 > totalFilas) {
+    sheet.deleteRows(totalFilas + 2, lastRow - 1 - totalFilas);
+  }
+
+  // Formato en bloque con getRangeList (una sola llamada por tipo)
+  var cobroA1 = [], facturaA1 = [], importeA1 = [], totalA1 = [];
+  resultado.forEach(function(item, i) {
+    var r = i + 2;
+    if (item.tipo === 'cobro')    cobroA1.push('A' + r + ':K' + r);
+    if (item.tipo === 'factura')  facturaA1.push('A' + r + ':K' + r);
+    importeA1.push('G' + r);
+    if (item.tipo === 'principal') totalA1.push('J' + r);
+  });
+
+  if (cobroA1.length)   sheet.getRangeList(cobroA1).setBackground('#f0f7f0').setFontColor('#2e7d32').setFontSize(9);
+  if (facturaA1.length) sheet.getRangeList(facturaA1).setBackground('#e8f0fe').setFontColor('#1a237e').setFontSize(9);
+  if (importeA1.length) sheet.getRangeList(importeA1).setNumberFormat('#,##0.00');
+  if (totalA1.length)   sheet.getRangeList(totalA1).setNumberFormat('#,##0.00');
+}
+
+function _subfilaCobro(cobro) {
+  var f = ['', '', '', '', '', '', '', '', '', '', ''];
+  f[1] = '  ↳ Cobro';
+  f[2] = String(cobro.ID_Odoo || '');
+  f[4] = toDateStr(cobro.Fecha);
+  f[5] = String(cobro.Moneda || 'EUR');
+  f[6] = parseFloat(cobro.Importe) || 0;
+  return f;
+}
+
+function _subfilaFactura(factura) {
+  var f = ['', '', '', '', '', '', '', '', '', '', ''];
+  f[1] = '  ↳ Factura';
+  f[2] = String(factura.Numero || '');
+  f[4] = toDateStr(factura.Fecha);
+  f[5] = String(factura.Moneda || 'EUR');
+  f[6] = parseFloat(factura.Importe) || 0;
+  f[7] = toDateStr(factura.Vencimiento);
+  return f;
+}

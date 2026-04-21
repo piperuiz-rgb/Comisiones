@@ -56,6 +56,7 @@ function importarPedidos() {
   var resultado = _procesarPedidos(filas);
   _limpiarTemp();
   _mostrarResultado('Pedidos', resultado);
+  try { actualizarResumenPedidos(); } catch(e) { Logger.log('actualizarResumenPedidos: ' + e.message); }
 }
 
 function importarFacturas() {
@@ -64,6 +65,7 @@ function importarFacturas() {
   var resultado = _procesarFacturas(filas);
   _limpiarTemp();
   _mostrarResultado('Facturas', resultado);
+  try { actualizarResumenPedidos(); } catch(e) { Logger.log('actualizarResumenPedidos: ' + e.message); }
 }
 
 function importarCobros() {
@@ -72,6 +74,7 @@ function importarCobros() {
   var resultado = _procesarCobros(filas);
   _limpiarTemp();
   _mostrarResultado('Cobros', resultado);
+  try { actualizarResumenPedidos(); } catch(e) { Logger.log('actualizarResumenPedidos: ' + e.message); }
 }
 
 // ============================================================

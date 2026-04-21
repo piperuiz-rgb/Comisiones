@@ -6,6 +6,7 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu('Comisiones CRI')
     .addItem('📊 Generar informe mensual', 'generarInformeMensual')
+    .addItem('🔄 Actualizar resumen de pedidos', 'actualizarResumenPedidosMenu')
     .addSeparator()
     .addItem('☁️ Sincronizar desde Drive', 'sincronizarDesdeDrive')
     .addItem('📡 Estado de la sincronización', 'verEstadoSync')
@@ -29,6 +30,18 @@ function onOpen() {
         .addItem('Desactivar sync automática',          'desactivarSyncAutomatica')
     )
     .addToUi();
+}
+
+// ---- Actualizar resumen de pedidos (desde menú) ----
+
+function actualizarResumenPedidosMenu() {
+  var ui = SpreadsheetApp.getUi();
+  try {
+    actualizarResumenPedidos();
+    ui.alert('✅ Resumen de pedidos actualizado.\n\nSe han añadido las sub-filas de cobros y facturas bajo cada pedido.');
+  } catch(e) {
+    ui.alert('Error', e.message, ui.ButtonSet.OK);
+  }
 }
 
 // ---- Validación ----
@@ -133,8 +146,8 @@ function crearEstructura() {
     },
     {
       nombre: SHEET_NAMES.PEDIDOS,
-      cabeceras: ['ID_Odoo', 'Numero', 'Cliente_Nombre', 'Referencia_Cliente', 'Fecha', 'Moneda', 'Importe', 'Condiciones_Pago', 'Ultima_Actualizacion'],
-      anchos: [180, 100, 200, 160, 100, 60, 100, 120, 140]
+      cabeceras: ['ID_Odoo', 'Numero', 'Cliente_Nombre', 'Referencia_Cliente', 'Fecha', 'Moneda', 'Importe', 'Condiciones_Pago', 'Ultima_Actualizacion', 'Total_Cobrado', 'Facturas_Ref'],
+      anchos: [180, 100, 200, 160, 100, 60, 100, 120, 140, 110, 200]
     },
     {
       nombre: SHEET_NAMES.FACTURAS,
