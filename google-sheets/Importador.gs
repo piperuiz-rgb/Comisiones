@@ -251,12 +251,15 @@ function _procesarFacturas(filas) {
 
 function _procesarCobros(filas) {
   // Columnas Gextia:
+  // col0: Cliente/Proveedor (vacío en cobros de TPV/POS)
   // col1: Estado (solo importar 'posted')
   // col2: Fecha
   // col4: Importe firmado (en la moneda del cobro)
   // col5: Moneda
   // col7: Número (clave única, p.ej. BNK8/2026/0296)
   // col8: Facturas conciliadas (p.ej. "INV/2026/000266 (19497895)")
+  // col9: Ventas — referencia del pedido si el pago es anticipo sobre pedido (p.ej. BVEJ3727)
+  // col10: Referencia — texto libre descriptivo (no se almacena)
   var facturas = getSheetData(SHEET_NAMES.FACTURAS);
   var facturaNums = {};
   facturas.forEach(function(f) { facturaNums[String(f.Numero || '').toLowerCase()] = true; });
@@ -268,20 +271,22 @@ function _procesarCobros(filas) {
     function(f) { return String(f[7] || '').trim(); }, // Número como clave
     function(f) {
       var facturaRef = _extractFacturaConciliada(String(f[8] || ''));
+      var pedidoRef  = String(f[9] || '').trim();
+      var cliente    = String(f[0] || '').trim();
       var importe    = Math.abs(parseFloat(f[4]) || 0);
 
       if (facturaRef && !facturaNums[facturaRef.toLowerCase()]) {
         errores.push('Cobro "' + f[7] + '": factura "' + facturaRef + '" no encontrada.');
       }
-      // A partir de abril 2026 todo cobro posted debe tener factura conciliada
+      // A partir de abril 2026, cobros de cliente sin factura NI pedido son datos incompletos
       var fechaCobro = _parseFecha(f[2]);
-      if (!facturaRef && fechaCobro >= '2026-04-01') {
-        errores.push('⚠️ Cobro "' + f[7] + '" (' + fechaCobro + '): sin factura conciliada — introduce la referencia manualmente en Gextia.');
+      if (cliente && !facturaRef && !pedidoRef && fechaCobro >= '2026-04-01') {
+        errores.push('⚠️ Cobro "' + f[7] + '" (' + fechaCobro + '): sin factura ni pedido — introduce la referencia manualmente en Gextia.');
       }
       return [
         String(f[7] || '').trim(),                   // ID_Odoo = Número
         facturaRef,                                   // Factura_Ref
-        '',                                           // Pedido_Ref (no disponible)
+        pedidoRef,                                    // Pedido_Ref (col9 Ventas)
         _parseFecha(f[2]),                            // Fecha
         String(f[5] || 'EUR').trim().toUpperCase(),  // Moneda
         importe,                                      // Importe

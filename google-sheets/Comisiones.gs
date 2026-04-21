@@ -25,6 +25,8 @@ function calcularComisionesEngine(datos, params) {
   var showroomPorNombre  = buildMap(showrooms, 'Nombre');
   var clientesPorNombre  = groupBy(clientes, 'Nombre');   // { nombre: [clienteA, clienteB, ...] }
   var cobrosParaFactura  = groupBy(cobros, 'Factura_Ref');
+  // Anticipos sobre pedido sin factura conciliada (Pedido_Ref relleno, Factura_Ref vacío)
+  var cobrosParaPedido   = groupBy(cobros.filter(function(c) { return !String(c.Factura_Ref || '').trim(); }), 'Pedido_Ref');
 
   var items = [];
   // Clave: abonoNum + '|' + showroomNombre → permite que el mismo abono aparezca
@@ -37,12 +39,19 @@ function calcularComisionesEngine(datos, params) {
 
     var importeFactura = parseFloat(factura.Importe) || 0;
     var numFactura = String(factura.Numero || '').trim();
+    var pedidoRef  = String(factura.Pedidos_Ref || '').trim();
 
-    // Cobros asociados a esta factura, ordenados por fecha
-    var cobrosFactura = (cobrosParaFactura[numFactura] || [])
-      .map(function(c) {
-        return { fecha: toDateStr(c.Fecha), importe: parseFloat(c.Importe) || 0, tipo: 'cobro' };
-      })
+    // Cobros directos sobre esta factura
+    var cobrosDirectos = (cobrosParaFactura[numFactura] || []).map(function(c) {
+      return { fecha: toDateStr(c.Fecha), importe: parseFloat(c.Importe) || 0, tipo: 'cobro' };
+    });
+    // Anticipos sobre el pedido origen que aún no tienen factura conciliada
+    var cobrosAnticipo = pedidoRef
+      ? (cobrosParaPedido[pedidoRef] || []).map(function(c) {
+          return { fecha: toDateStr(c.Fecha), importe: parseFloat(c.Importe) || 0, tipo: 'cobro' };
+        })
+      : [];
+    var cobrosFactura = cobrosDirectos.concat(cobrosAnticipo)
       .sort(function(a, b) { return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0; });
 
     // Abonos que referencian esta factura
