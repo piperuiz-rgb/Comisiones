@@ -188,12 +188,15 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
     .setValue('Generado: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
     .setFontColor('#888888').setFontStyle('italic').setHorizontalAlignment('center');
 
-  var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Fecha cobro 100%', 'Pedido origen', 'Ref. cliente', 'Cliente', 'Moneda', 'Importe factura', 'Total cobrado'];
+  var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Fecha cobro 100%', 'Pedido origen', 'Pedido Joor', 'Cliente', 'Moneda', 'Importe factura', 'Total cobrado'];
 
   if (resultado.items.length === 0) {
     hoja.getRange(4, 1).setValue('Sin facturas cobradas al 100% este mes.');
     return;
   }
+
+  // Columna "Pedido Joor" en formato texto para evitar decimales en códigos numéricos
+  hoja.getRange(4, 5, 2000, 1).setNumberFormat('@');
 
   var fila = 4;
   Object.keys(resultado.porShowroom).forEach(function(srNombre) {
@@ -269,12 +272,15 @@ function _escribirTabEmitidas(hoja, emitidas, mes, anyo) {
     .setValue('Generado: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
     .setFontColor('#888888').setFontStyle('italic').setHorizontalAlignment('center');
 
-  var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Fecha vencimiento', 'Pedido origen', 'Ref. cliente', 'Cliente', 'Moneda', 'Importe'];
+  var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Fecha vencimiento', 'Pedido origen', 'Pedido Joor', 'Cliente', 'Moneda', 'Importe'];
 
   if (emitidas.items.length === 0) {
     hoja.getRange(4, 1).setValue('Sin facturas emitidas este mes.');
     return;
   }
+
+  // Columna "Pedido Joor" en formato texto para evitar decimales en códigos numéricos
+  hoja.getRange(4, 5, 2000, 1).setNumberFormat('@');
 
   var fila = 4;
   Object.keys(emitidas.porShowroom).forEach(function(srNombre) {
