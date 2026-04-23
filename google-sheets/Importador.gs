@@ -305,7 +305,7 @@ function _procesarCobros(filas) {
       if (!facturaRef && !pedidoRef) {
         var refTexto    = String(f[10] || '').trim();
         var primerToken = refTexto ? refTexto.split(/\s+/)[0] : '';
-        if (primerToken) {
+        if (primerToken && primerToken.toLowerCase() !== 'combine') {
           var tokenLC = primerToken.toLowerCase();
           if (facturaNums[tokenLC]) {
             // Coincide exactamente con un Numero de factura
