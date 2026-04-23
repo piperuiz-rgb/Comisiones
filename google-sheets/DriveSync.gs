@@ -118,8 +118,15 @@ function sincronizarDesdeDrive() {
     var carpetaId = props.getProperty(entidad.propId);
     if (!carpetaId) return;
 
-    var carpeta  = DriveApp.getFolderById(carpetaId);
-    var archivos = _obtenerExcels(carpeta);
+    var carpeta, archivos;
+    try {
+      carpeta  = DriveApp.getFolderById(carpetaId);
+      archivos = _obtenerExcels(carpeta);
+    } catch(e) {
+      lineasResumen.push('❌ Carpeta ' + entidad.nombre + ': no se pudo acceder — ' + e.message);
+      Logger.log('Error accediendo a carpeta ' + entidad.nombre + ' (' + carpetaId + '): ' + e.message);
+      return;
+    }
 
     archivos.forEach(function(archivo) {
       totalArchivos++;
@@ -128,7 +135,7 @@ function sincronizarDesdeDrive() {
         var filas = _leerExcelDesdeDrive(archivo.getId());
 
         // Borrar el Excel haya o no datos (ya fue leído)
-        archivo.setTrashed(true);
+        try { archivo.setTrashed(true); } catch(eDel) { Logger.log('No se pudo borrar ' + nombreOriginal + ': ' + eDel.message); }
 
         if (!filas || filas.length < 2) {
           lineasResumen.push('⚠️ ' + nombreOriginal + ': vacío, omitido.');
@@ -148,7 +155,7 @@ function sincronizarDesdeDrive() {
 
       } catch(e) {
         lineasResumen.push('❌ ' + nombreOriginal + ': ERROR — ' + e.message);
-        Logger.log('Error procesando ' + nombreOriginal + ': ' + e.message);
+        Logger.log('Error procesando ' + nombreOriginal + ': ' + e.message + '\n' + e.stack);
       }
     });
   });
