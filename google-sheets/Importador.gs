@@ -278,10 +278,16 @@ function _procesarCobros(filas) {
   // col7: Número (clave única, p.ej. BNK8/2026/0296)
   // col8: Facturas conciliadas (p.ej. "INV/2026/000266 (19497895)")
   // col9: Ventas — referencia del pedido si el pago es anticipo sobre pedido (p.ej. BVEJ3727)
-  // col10: Referencia — texto libre descriptivo (no se almacena)
+  // col10: Referencia — texto libre; si col8 y col9 están vacíos se intenta extraer ref de aquí
   var facturas = getSheetData(SHEET_NAMES.FACTURAS);
   var facturaNums = {};
-  facturas.forEach(function(f) { facturaNums[String(f.Numero || '').toLowerCase()] = true; });
+  var facturaPorOrigen = {}; // Pedidos_Ref → Numero de factura
+  facturas.forEach(function(f) {
+    var num    = String(f.Numero      || '').trim();
+    var origen = String(f.Pedidos_Ref || '').trim().toLowerCase();
+    if (num) facturaNums[num.toLowerCase()] = num;
+    if (origen && num) facturaPorOrigen[origen] = num;
+  });
 
   var errores = [];
   var resultado = _upsertEnSheet(
@@ -293,20 +299,45 @@ function _procesarCobros(filas) {
       var pedidoRef  = String(f[9] || '').trim();
       var cliente    = String(f[0] || '').trim();
       var importe    = Math.abs(parseFloat(f[4]) || 0);
+      var fechaCobro = _parseFecha(f[2]);
+
+      // Si col8 y col9 están vacíos, intentar extraer referencia de col10 (Referencia)
+      if (!facturaRef && !pedidoRef) {
+        var refTexto    = String(f[10] || '').trim();
+        var primerToken = refTexto ? refTexto.split(/\s+/)[0] : '';
+        if (primerToken) {
+          var tokenLC = primerToken.toLowerCase();
+          if (facturaNums[tokenLC]) {
+            // Coincide exactamente con un Numero de factura
+            facturaRef = facturaNums[tokenLC];
+          } else if (facturaPorOrigen[tokenLC]) {
+            // Coincide con el Pedidos_Ref de una factura → usar el Numero de esa factura
+            facturaRef = facturaPorOrigen[tokenLC];
+          } else {
+            // Sin coincidencia: guardar el token como Factura_Ref para que sea visible
+            facturaRef = primerToken;
+            errores.push('⚠️ Cobro "' + f[7] + '": referencia "' + primerToken + '" (de col10) no encontrada en Facturas — revisa manualmente.');
+          }
+        }
+      }
 
       if (facturaRef && !facturaNums[facturaRef.toLowerCase()]) {
-        errores.push('Cobro "' + f[7] + '": factura "' + facturaRef + '" no encontrada.');
+        // Solo avisar si no vino de col10 (esos ya tienen su propio aviso arriba)
+        if (_extractFacturaConciliada(String(f[8] || '')) === facturaRef) {
+          errores.push('Cobro "' + f[7] + '": factura "' + facturaRef + '" no encontrada.');
+        }
       }
-      // A partir de abril 2026, cobros de cliente sin factura NI pedido son datos incompletos
-      var fechaCobro = _parseFecha(f[2]);
+
+      // Cobros de cliente sin ninguna referencia
       if (cliente && !facturaRef && !pedidoRef && fechaCobro >= '2026-04-01') {
         errores.push('⚠️ Cobro "' + f[7] + '" (' + fechaCobro + '): sin factura ni pedido — introduce la referencia manualmente en Gextia.');
       }
+
       return [
         String(f[7] || '').trim(),                   // ID_Odoo = Número
         facturaRef,                                   // Factura_Ref
         pedidoRef,                                    // Pedido_Ref (col9 Ventas)
-        _parseFecha(f[2]),                            // Fecha
+        fechaCobro,                                   // Fecha
         String(f[5] || 'EUR').trim().toUpperCase(),  // Moneda
         importe,                                      // Importe
         false,                                        // Es_Ajuste
