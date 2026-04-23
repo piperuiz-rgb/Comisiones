@@ -542,10 +542,9 @@ function _calcularCandidatas(datos, fechaInicio, fechaFin) {
       return s + (parseFloat(c.Importe) || 0);
     }, 0));
 
-    // Umbral residual: si el pendiente es menor al umbral se considera cobrada al 100%
-    var umbral   = importe < 1000 ? 30 : importe < 10000 ? 50 : 100;
+    // Cualquier importe pendiente (sin umbral) → candidata
     var pendiente = redondear2(importe - totalCobrado);
-    if (pendiente <= umbral) return; // ya cobrada al 100% → la recoge el informe de cobradas
+    if (pendiente <= 0) return; // cobrada al 100% exacto → la recoge el informe de cobradas
 
     // Solo clientes con showroom asignado
     var nombreCliente   = String(factura.Cliente_Nombre || '').trim();
