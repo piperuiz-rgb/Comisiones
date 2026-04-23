@@ -322,9 +322,10 @@ function _autoMatchGextia(hilldunNombre, clientes) {
 function _normalizarNombre(s) {
   if (!s) return '';
   return String(s)
+    .replace(/\([^)]*\)/g, ' ')  // eliminar texto entre paréntesis (ej: "(London)", "(clifton)")
     .toLowerCase()
     .replace(/['\.\-,\/\(\)&]/g, ' ')
-    .replace(/\b(srl|spa|ltd|llc|inc|gmbh|sa|sl|group|co|corp|the|net|a|of|pty)\b/g, ' ')
+    .replace(/\b(srl|spa|ltd|llc|inc|gmbh|sa|sl|group|co|corp|corporation|the|net|a|of|pty)\b/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
