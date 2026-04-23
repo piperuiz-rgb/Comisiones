@@ -129,6 +129,7 @@ function sincronizarDesdeDrive() {
     }
 
     archivos.forEach(function(archivo) {
+      if (totalArchivos > 0) Utilities.sleep(2000); // pausa entre archivos para evitar rate limit
       totalArchivos++;
       var nombreOriginal = archivo.getName();
       try {
@@ -187,19 +188,33 @@ function _leerExcelDesdeDrive(fileId) {
   var archivo = DriveApp.getFileById(fileId);
   var blob    = archivo.getBlob();
 
-  // Convertir xlsx a Google Sheets temporalmente (Drive API v3)
-  // Al especificar mimeType Google Sheets con un blob xlsx, Drive convierte automáticamente
-  var convertido = Drive.Files.create(
-    { name: 'TEMP_CRI_' + new Date().getTime(), mimeType: MimeType.GOOGLE_SHEETS },
-    blob
-  );
+  Logger.log('Convirtiendo: ' + archivo.getName() + ' (' + Math.round(blob.getBytes().length / 1024) + ' KB)');
+
+  // Convertir xlsx a Google Sheets (Drive API v3) — hasta 3 intentos con pausa
+  var convertido;
+  for (var intento = 1; intento <= 3; intento++) {
+    try {
+      convertido = Drive.Files.create(
+        { name: 'TEMP_CRI_' + new Date().getTime(), mimeType: MimeType.GOOGLE_SHEETS },
+        blob
+      );
+      break;
+    } catch(e) {
+      Logger.log('Conversión intento ' + intento + ' fallido (' + archivo.getName() + '): ' + e.message);
+      if (intento < 3) {
+        Utilities.sleep(4000 * intento); // 4s, luego 8s
+      } else {
+        throw new Error('No se pudo convertir "' + archivo.getName() + '" tras 3 intentos: ' + e.message);
+      }
+    }
+  }
 
   try {
     var ss    = SpreadsheetApp.openById(convertido.id);
     var sheet = ss.getSheets()[0];
     return sheet.getDataRange().getValues();
   } finally {
-    DriveApp.getFileById(convertido.id).setTrashed(true);
+    try { DriveApp.getFileById(convertido.id).setTrashed(true); } catch(eTmp) {}
   }
 }
 
