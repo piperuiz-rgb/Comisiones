@@ -313,3 +313,34 @@ function _subfilaFactura(factura) {
   f[7] = toDateStr(factura.Vencimiento);
   return f;
 }
+
+// Migración: añade Tracking_DHL, Tracking_Seguimiento, Tracking_Envio, Modo_Pago
+// a la hoja Facturas si no existen todavía (columnas antes de Ultima_Actualizacion).
+function _asegurarColumnasFacturas() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAMES.FACTURAS);
+  if (!sheet) return;
+
+  var lastCol = sheet.getLastColumn();
+  if (lastCol < 1) return;
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+
+  if (headers.indexOf('Tracking_DHL') !== -1) return; // ya migrado
+
+  var ultimaIdx = headers.indexOf('Ultima_Actualizacion');
+  if (ultimaIdx === -1) return;
+
+  var insertCol = ultimaIdx + 1; // 1-based
+  sheet.insertColumnsBefore(insertCol, 4);
+
+  var nuevas = [['Tracking_DHL', 'Tracking_Seguimiento', 'Tracking_Envio', 'Modo_Pago']];
+  sheet.getRange(1, insertCol, 1, 4)
+    .setValues(nuevas)
+    .setBackground('#1a1a2e')
+    .setFontColor('#ffffff')
+    .setFontWeight('bold');
+
+  [150, 150, 150, 120].forEach(function(w, i) {
+    sheet.setColumnWidth(insertCol + i, w);
+  });
+}

@@ -14,7 +14,8 @@ var HILLDUN_PROP = {
   BASE_DATOS_ID:  'HILLDUN_BASE_DATOS_ID',
   EURO_ID:        'HILLDUN_EURO_ID',
   DOLAR_ID:       'HILLDUN_DOLAR_ID',
-  GEXTIA_FILE_ID: 'HILLDUN_GEXTIA_FILE_ID'
+  GEXTIA_FILE_ID: 'HILLDUN_GEXTIA_FILE_ID',
+  COMISIONES_ID:  'HILLDUN_COMISIONES_ID'
 };
 
 // Columnas de la pestaña Clientes (orden fijo — no cambiar sin actualizar los índices)
@@ -40,6 +41,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Hilldun')
     .addItem('⚙️ Configurar', 'configurarHilldun')
+    .addItem('🔗 Configurar enlace Comisiones', 'configurarComisionesLink')
     .addSeparator()
     .addItem('🔄 Actualizar Clientes desde Drive', 'actualizarClientesDesdeDrive')
     .addItem('📊 Ver estado', 'verEstadoHilldun')
@@ -80,13 +82,3 @@ function verEstadoHilldun() {
   );
 }
 
-function generarArchivoFacturas() {
-  SpreadsheetApp.getUi().alert(
-    'Próximamente',
-    'La generación del archivo de Facturas para Hilldun está en desarrollo.\n\n'
-    + 'Asegúrate primero de que la base de datos de clientes está completa:\n'
-    + '  • Todos los clientes tienen Gextia_Nombre rellenado\n'
-    + '  • CP y Teléfono añadidos donde sea necesario',
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
-}

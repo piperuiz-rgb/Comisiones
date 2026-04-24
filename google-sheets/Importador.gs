@@ -202,18 +202,24 @@ function _procesarPedidos(filas) {
 
 function _procesarFacturas(filas) {
   // Columnas Gextia (Facturas.xlsx):
-  // col0: Número        — INV/AAAA/XXXXXX o RINV/... para abonos  ← CLAVE
-  // col1: Referencia    — "PO: XXXXXXXX" en facturas normales;
-  //                       "Reversión de: INV/..." en abonos automáticos;
-  //                       texto libre en abonos manuales
-  // col2: Total con signo en moneda — importe con signo (negativo en abonos)
-  // col3: Moneda        — EUR / USD
-  // col4: Fecha de factura
-  // col5: Condiciones de pago (no se almacena)
-  // col6: Empresa       — cliente, formato "(Showroom) Nombre" o "Nombre"
-  // col7: Fecha de Vencimiento
-  // col8: Origen        — referencia del pedido origen (BVEJ3605, S00211…)
-  // col9: Albaranes relacionados/DHL... (no se almacena)
+  // col0:  Número        — INV/AAAA/XXXXXX o RINV/... para abonos  ← CLAVE
+  // col1:  Referencia    — "PO: XXXXXXXX" en facturas normales;
+  //                        "Reversión de: INV/..." en abonos automáticos;
+  //                        texto libre en abonos manuales
+  // col2:  Total con signo en moneda — importe con signo (negativo en abonos)
+  // col3:  Moneda        — EUR / USD
+  // col4:  Fecha de factura
+  // col5:  Condiciones de pago (no se almacena)
+  // col6:  Empresa       — cliente, formato "(Showroom) Nombre" o "Nombre"
+  // col7:  Fecha de Vencimiento
+  // col8:  Origen        — referencia del pedido origen (BVEJ3605, S00211…)
+  // col9:  Albaranes relacionados/DHL Express Tracking Reference
+  // col10: Albaranes relacionados/Número de seguimiento
+  // col11: Albaranes relacionados/Referencia de envío
+  // col12: Modo de pago
+
+  _asegurarColumnasFacturas();
+
   return _upsertEnSheet(
     SHEET_NAMES.FACTURAS,
     filas,
@@ -228,7 +234,6 @@ function _procesarFacturas(filas) {
       var cliente = _extractNombre(f[6]);
       var vencimiento = _parseFecha(f[7]);
       var pedidosRef  = String(f[8] || '').trim();
-      // f[9] = Albaranes — no se almacena
 
       var esAbono = nombre.toUpperCase().indexOf('RINV/') === 0 || importe < 0;
       if (esAbono && importe > 0) importe = -importe;
@@ -250,18 +255,22 @@ function _procesarFacturas(filas) {
       var notas = esAbono ? '' : ref.replace(/^PO:\s*/i, '').trim();
 
       return [
-        nombre,           // ID_Odoo = Numero (clave estable)
-        nombre,           // Numero
-        cliente,          // Cliente_Nombre
-        pedidosRef,       // Pedidos_Ref (Origen)
-        fecha,            // Fecha
-        vencimiento,      // Vencimiento
-        moneda,           // Moneda
-        importe,          // Importe
-        esAbono,          // Es_Abono
-        facturasAbonadas, // Facturas_Abonadas
-        notas,            // Notas (Pedido Joor sin prefijo)
-        new Date()        // Ultima_Actualizacion
+        nombre,                              // ID_Odoo = Numero (clave estable)
+        nombre,                              // Numero
+        cliente,                             // Cliente_Nombre
+        pedidosRef,                          // Pedidos_Ref (Origen)
+        fecha,                               // Fecha
+        vencimiento,                         // Vencimiento
+        moneda,                              // Moneda
+        importe,                             // Importe
+        esAbono,                             // Es_Abono
+        facturasAbonadas,                    // Facturas_Abonadas
+        notas,                               // Notas (Pedido Joor sin prefijo)
+        String(f[9]  || '').trim(),          // Tracking_DHL
+        String(f[10] || '').trim(),          // Tracking_Seguimiento
+        String(f[11] || '').trim(),          // Tracking_Envio
+        String(f[12] || '').trim(),          // Modo_Pago
+        new Date()                           // Ultima_Actualizacion
       ];
     },
     function(f) { return !String(f[0] || '').trim(); }      // saltar si no hay Numero
