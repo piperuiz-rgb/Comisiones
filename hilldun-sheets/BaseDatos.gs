@@ -63,6 +63,9 @@ function configurarHilldun() {
 // ---- Actualizar clientes desde Drive ----
 
 function actualizarClientesDesdeDrive() {
+  var tiempoInicio = new Date().getTime();
+  var LIMITE_MS    = 4 * 60 * 1000; // 4 minutos (Apps Script corta a los 6)
+
   var props = PropertiesService.getScriptProperties();
 
   if (!props.getProperty(HILLDUN_PROP.CONFIGURADO)) {
@@ -74,9 +77,24 @@ function actualizarClientesDesdeDrive() {
     return;
   }
 
+  // Verificar que Drive API está activada antes de empezar
+  if (typeof Drive === 'undefined') {
+    SpreadsheetApp.getUi().alert(
+      '⚠️ Drive API no activada',
+      'Este script necesita el servicio avanzado "Drive API".\n\n'
+      + 'Cómo activarlo:\n'
+      + '1. Abre el editor de Apps Script\n'
+      + '2. Haz clic en el icono "+" junto a "Servicios"\n'
+      + '3. Busca "Drive API" y pulsa "Añadir"\n'
+      + '4. Guarda y vuelve a ejecutar esta función',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    return;
+  }
+
   // Cargar clientes Gextia para auto-matching (opcional)
-  var clientesGextia  = [];
-  var gextiaFileId    = props.getProperty(HILLDUN_PROP.GEXTIA_FILE_ID);
+  var clientesGextia = [];
+  var gextiaFileId   = props.getProperty(HILLDUN_PROP.GEXTIA_FILE_ID);
   if (gextiaFileId) {
     try {
       clientesGextia = _leerClientesGextia(gextiaFileId);
@@ -87,8 +105,9 @@ function actualizarClientesDesdeDrive() {
   }
 
   // Leer archivos de credit status de EURO y DOLAR
-  var debtors = {}; // Hilldun_Code → objeto con datos del cliente
-  var errores = [];
+  var debtors        = {};
+  var errores        = [];
+  var resumenArchivos = [];
 
   [
     [HILLDUN_PROP.EURO_ID, 'EUR'],
@@ -106,27 +125,44 @@ function actualizarClientesDesdeDrive() {
       return;
     }
 
-    var archivos = _obtenerExcels(carpeta);
+    var archivos = _obtenerExcels(carpeta); // ya vienen ordenados del más reciente al más antiguo
+    resumenArchivos.push(moneda + ': ' + archivos.length + ' archivo(s)');
     Logger.log('BASE DE DATOS/' + moneda + ': ' + archivos.length + ' archivo(s)');
 
-    archivos.forEach(function(archivo) {
+    for (var ai = 0; ai < archivos.length; ai++) {
+      // Parar si se acerca el límite de tiempo (quedan archivos para la próxima ejecución)
+      if (new Date().getTime() - tiempoInicio > LIMITE_MS) {
+        var restantes = archivos.length - ai;
+        errores.push('⏱ ' + moneda + ': tiempo agotado, ' + restantes + ' archivo(s) sin procesar — ejecuta de nuevo para continuar');
+        Logger.log('Tiempo agotado en carpeta ' + moneda + ' tras ' + ai + ' archivo(s)');
+        break;
+      }
+
+      var archivo = archivos[ai];
       try {
         var filas = _leerExcelDesdeDrive(archivo.getId());
         if (!filas || filas.length < 2) {
           Logger.log('Archivo vacío omitido: ' + archivo.getName());
-          return;
+          continue;
         }
+        var antesDebtors = Object.keys(debtors).length;
         _parsearCreditStatus(filas, moneda, debtors);
+        var nuevosDebtors = Object.keys(debtors).length - antesDebtors;
+        Logger.log(archivo.getName() + ': ' + nuevosDebtors + ' debtor(s) nuevos extraídos');
       } catch(e) {
         errores.push('❌ ' + archivo.getName() + ': ' + e.message);
         Logger.log('Error en ' + archivo.getName() + ': ' + e.message);
       }
-    });
+    }
   });
 
-  if (Object.keys(debtors).length === 0 && errores.length === 0) {
+  var totalDebtors = Object.keys(debtors).length;
+  Logger.log('Total debtors extraídos: ' + totalDebtors);
+
+  // Sin archivos en ninguna carpeta
+  if (resumenArchivos.every(function(r) { return r.indexOf('0 archivo') !== -1; }) && errores.length === 0) {
     SpreadsheetApp.getUi().alert(
-      'Sin datos',
+      'Sin archivos',
       'No se encontraron archivos Excel en las carpetas BASE DE DATOS/EURO ni BASE DE DATOS/DOLAR.\n\n'
       + 'Sube los archivos de credit status exportados de Hilldun a las subcarpetas correspondientes.',
       SpreadsheetApp.getUi().ButtonSet.OK
@@ -134,19 +170,36 @@ function actualizarClientesDesdeDrive() {
     return;
   }
 
+  // Archivos encontrados pero ningún debtor extraído → error de formato o Drive API
+  if (totalDebtors === 0) {
+    var msgError = 'Se encontraron archivos pero no se pudo extraer ningún cliente.\n\n';
+    msgError += 'Archivos en Drive:\n  ' + resumenArchivos.join('\n  ') + '\n\n';
+    if (errores.length > 0) {
+      msgError += 'Errores:\n' + errores.join('\n') + '\n\n';
+    }
+    msgError += 'Causas posibles:\n'
+      + '• Drive API no está activada (Servicios → Drive API → Añadir)\n'
+      + '• Los archivos tienen un formato diferente al esperado\n'
+      + '• Los archivos no son archivos de credit status de Hilldun';
+    SpreadsheetApp.getUi().alert('Sin resultados', msgError, SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+
   var resultado = _upsertClientes(debtors, clientesGextia);
 
-  var msg = '✅ ' + resultado.nuevos + ' nuevos  '
+  var msg = 'Archivos procesados:\n  ' + resumenArchivos.join('\n  ') + '\n'
+    + 'Clientes extraídos: ' + totalDebtors + '\n\n'
+    + '✅ ' + resultado.nuevos + ' nuevos  '
     + '🔄 ' + resultado.actualizados + ' actualizados  '
     + '— ' + resultado.sinCambios + ' sin cambios';
 
   if (resultado.sinMatchGextia > 0) {
     msg += '\n\n⚠️ ' + resultado.sinMatchGextia
-      + ' cliente(s) sin auto-match en Gextia.\n'
-      + 'Rellena la columna "Gextia_Nombre" manualmente para esos clientes.';
+      + ' cliente(s) sin match automático en Gextia.\n'
+      + 'Rellena la columna "Gextia_Nombre" manualmente.';
   }
   if (errores.length > 0) {
-    msg += '\n\nErrores:\n' + errores.join('\n');
+    msg += '\n\nAvisos:\n' + errores.join('\n');
   }
 
   SpreadsheetApp.getUi().alert('🔄 Clientes actualizados', msg, SpreadsheetApp.getUi().ButtonSet.OK);
@@ -157,16 +210,16 @@ function actualizarClientesDesdeDrive() {
 //          refnumber | start | completion | terms | ponumber | amount | decision | clicompany
 
 function _parsearCreditStatus(filas, moneda, debtors) {
-  // Localizar fila de cabecera (col0 = "debtor")
+  // Localizar fila de cabecera (col0 = "debtor") — buscar en todas las filas
   var startRow = -1;
-  for (var i = 0; i < Math.min(filas.length, 5); i++) {
+  for (var i = 0; i < filas.length; i++) {
     if (String(filas[i][0] || '').toLowerCase().trim() === 'debtor') {
       startRow = i + 1;
       break;
     }
   }
   if (startRow === -1) {
-    Logger.log('Cabecera "debtor" no encontrada — archivo omitido.');
+    Logger.log('Cabecera "debtor" no encontrada en ' + filas.length + ' filas — archivo omitido.');
     return;
   }
 
@@ -286,6 +339,8 @@ function _upsertClientes(debtors, clientesGextia) {
     }
   });
 
+  SpreadsheetApp.flush(); // forzar escritura en la hoja antes de devolver
+
   return { nuevos: nuevos, actualizados: actualizados, sinCambios: sinCambios, sinMatchGextia: sinMatchGextia };
 }
 
@@ -403,6 +458,7 @@ function _obtenerExcels(carpeta) {
   var resultado = [];
   var vistos    = {};
 
+  // .xls (formato antiguo)
   var iter = carpeta.getFilesByType(MimeType.MICROSOFT_EXCEL);
   while (iter.hasNext()) {
     var f = iter.next();
@@ -410,13 +466,32 @@ function _obtenerExcels(carpeta) {
     resultado.push(f);
   }
 
+  // .xlsx (formato moderno — MIME type diferente, no cubierto por MimeType.MICROSOFT_EXCEL)
+  var iterXlsx = carpeta.getFilesByType('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  while (iterXlsx.hasNext()) {
+    var f = iterXlsx.next();
+    if (!vistos[f.getId()]) {
+      vistos[f.getId()] = true;
+      resultado.push(f);
+    }
+  }
+
+  // Fallback: buscar por extensión por si el MIME no está bien asignado
   var todos = carpeta.getFiles();
   while (todos.hasNext()) {
     var f = todos.next();
     if (vistos[f.getId()]) continue;
     var nombre = f.getName().toLowerCase();
-    if (nombre.endsWith('.xlsx') || nombre.endsWith('.xls')) resultado.push(f);
+    if (nombre.endsWith('.xlsx') || nombre.endsWith('.xls')) {
+      vistos[f.getId()] = true;
+      resultado.push(f);
+    }
   }
+
+  // Ordenar del más reciente al más antiguo para procesar primero los datos más actuales
+  resultado.sort(function(a, b) {
+    return b.getLastUpdated().getTime() - a.getLastUpdated().getTime();
+  });
 
   return resultado;
 }
