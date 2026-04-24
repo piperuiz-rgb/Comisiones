@@ -269,7 +269,27 @@ function _upsertClientes(debtors, clientesGextia) {
     sheet = ss.getSheetByName(HILLDUN_SHEETS.CLIENTES);
   }
 
-  var filas  = sheet.getDataRange().getValues();
+  var filas = sheet.getDataRange().getValues();
+
+  // Auto-reparación: si los datos están desplazados (p.ej. fila 1001 por bug del checkbox),
+  // compactar moviendo todas las filas con datos a partir de la fila 2.
+  var primeraDataIdx = -1;
+  for (var i = 1; i < filas.length; i++) {
+    if (String(filas[i][0] || '').trim() !== '') { primeraDataIdx = i; break; }
+  }
+  if (primeraDataIdx > 1) {
+    Logger.log('Auto-reparación: datos encontrados en fila ' + (primeraDataIdx + 1) + ', compactando...');
+    var dataRows = filas.filter(function(row) { return String(row[0] || '').trim() !== ''; });
+    var totalRows = sheet.getLastRow();
+    if (totalRows > 1) sheet.getRange(2, 1, totalRows - 1, filas[0].length).clearContent();
+    if (dataRows.length > 0) {
+      sheet.getRange(2, 1, dataRows.length, dataRows[0].length).setValues(dataRows);
+    }
+    SpreadsheetApp.flush();
+    filas = sheet.getDataRange().getValues();
+    Logger.log('Auto-reparación completada: ' + dataRows.length + ' filas movidas a fila 2.');
+  }
+
   // Construir mapa: Hilldun_Code → índice en array filas (0-based, incluyendo header en [0])
   var existentes = {};
   for (var i = 1; i < filas.length; i++) {
@@ -335,6 +355,10 @@ function _upsertClientes(debtors, clientesGextia) {
       }
     } else {
       sheet.appendRow(nuevaFila);
+      // Aplicar checkbox solo a la fila recién añadida (no al rango completo para evitar
+      // que getLastRow() se dispare y los próximos appendRow vayan a filas incorrectas)
+      var cbRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
+      sheet.getRange(sheet.getLastRow(), 13).setDataValidation(cbRule);
       nuevos++;
     }
   });
@@ -424,14 +448,12 @@ function _inicializarHojaClientes() {
   // Destacar en amarillo la columna Gextia_Nombre (C1) — indica que es editable
   sheet.getRange('C1').setBackground('#fbbc04').setFontColor('#202124');
 
-  // Checkbox validation en columna Activo (M)
-  var activoRange = sheet.getRange('M2:M1000');
-  var cbRule = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-  activoRange.setDataValidation(cbRule);
-
   // Anchos de columna
   var anchos = [110, 200, 200, 200, 120, 130, 80, 70, 130, 130, 70, 90, 60, 200, 150];
   anchos.forEach(function(w, i) { sheet.setColumnWidth(i + 1, w); });
+  // NOTA: no aplicar checkbox validation al rango completo M2:M1000 — eso inicializa
+  // 999 celdas con FALSE, hace que getLastRow() devuelva 1000 y appendRow añada
+  // los datos en la fila 1001. La validación se aplica fila a fila al escribir datos.
 }
 
 // ---- Utilidades de Drive ----
