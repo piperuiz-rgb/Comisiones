@@ -314,33 +314,41 @@ function _subfilaFactura(factura) {
   return f;
 }
 
-// Migración: añade Tracking_DHL, Tracking_Seguimiento, Tracking_Envio, Modo_Pago
-// a la hoja Facturas si no existen todavía (columnas antes de Ultima_Actualizacion).
+// Migración: añade las columnas nuevas de Facturas si no existen todavía.
+// Si Ultima_Actualizacion está al final, inserta antes de ella; si no, añade al final.
 function _asegurarColumnasFacturas() {
   var ss    = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_NAMES.FACTURAS);
-  if (!sheet) return;
+  if (!sheet || sheet.getLastColumn() < 1) return;
 
-  var lastCol = sheet.getLastColumn();
-  if (lastCol < 1) return;
-  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
 
-  if (headers.indexOf('Tracking_DHL') !== -1) return; // ya migrado
+  var needed  = ['Tracking_DHL', 'Tracking_Seguimiento', 'Tracking_Envio', 'Modo_Pago'];
+  var missing = needed.filter(function(h) { return headers.indexOf(h) === -1; });
+  if (missing.length === 0) return;
 
   var ultimaIdx = headers.indexOf('Ultima_Actualizacion');
-  if (ultimaIdx === -1) return;
+  var ultimaEsUltima = ultimaIdx !== -1 && ultimaIdx === headers.length - 1;
 
-  var insertCol = ultimaIdx + 1; // 1-based
-  sheet.insertColumnsBefore(insertCol, 4);
-
-  var nuevas = [['Tracking_DHL', 'Tracking_Seguimiento', 'Tracking_Envio', 'Modo_Pago']];
-  sheet.getRange(1, insertCol, 1, 4)
-    .setValues(nuevas)
-    .setBackground('#1a1a2e')
-    .setFontColor('#ffffff')
-    .setFontWeight('bold');
-
-  [150, 150, 150, 120].forEach(function(w, i) {
-    sheet.setColumnWidth(insertCol + i, w);
-  });
+  if (ultimaEsUltima) {
+    // Insertar antes de Ultima_Actualizacion (1-based col)
+    var insertCol = ultimaIdx + 1;
+    sheet.insertColumnsBefore(insertCol, missing.length);
+    missing.forEach(function(nombre, i) {
+      sheet.getRange(1, insertCol + i)
+        .setValue(nombre)
+        .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+      sheet.setColumnWidth(insertCol + i, nombre === 'Modo_Pago' ? 120 : 150);
+    });
+  } else {
+    // Añadir al final
+    missing.forEach(function(nombre) {
+      var col = sheet.getLastColumn() + 1;
+      sheet.getRange(1, col)
+        .setValue(nombre)
+        .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+      sheet.setColumnWidth(col, nombre === 'Modo_Pago' ? 120 : 150);
+    });
+  }
 }

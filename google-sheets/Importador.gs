@@ -201,46 +201,57 @@ function _procesarPedidos(filas) {
 }
 
 function _procesarFacturas(filas) {
-  // Columnas Gextia (Facturas.xlsx):
-  // col0:  Número        — INV/AAAA/XXXXXX o RINV/... para abonos  ← CLAVE
-  // col1:  Referencia    — "PO: XXXXXXXX" en facturas normales;
-  //                        "Reversión de: INV/..." en abonos automáticos;
-  //                        texto libre en abonos manuales
-  // col2:  Total con signo en moneda — importe con signo (negativo en abonos)
-  // col3:  Moneda        — EUR / USD
-  // col4:  Fecha de factura
-  // col5:  Condiciones de pago (no se almacena)
-  // col6:  Empresa       — cliente, formato "(Showroom) Nombre" o "Nombre"
-  // col7:  Fecha de Vencimiento
-  // col8:  Origen        — referencia del pedido origen (BVEJ3605, S00211…)
-  // col9:  Albaranes relacionados/DHL Express Tracking Reference
-  // col10: Albaranes relacionados/Número de seguimiento
-  // col11: Albaranes relacionados/Referencia de envío
-  // col12: Modo de pago
+  // Lee las columnas del Excel de Gextia por nombre de cabecera (fila 0),
+  // no por posición. Así el orden de columnas en el export no importa.
+  // Cabeceras esperadas (nombres en español tal como exporta Gextia/Odoo):
+  //   Número | Referencia | Total con signo en moneda | Moneda |
+  //   Fecha de factura | Condiciones de pago | Empresa |
+  //   Fecha de Vencimiento | Origen |
+  //   Albaranes relacionados/DHL Express Tracking Reference |
+  //   Albaranes relacionados/Número de seguimiento |
+  //   Albaranes relacionados/Referencia de envío | Modo de pago
 
   _asegurarColumnasFacturas();
+
+  // Mapa cabecera→índice del archivo de importación (insensible a mayúsculas)
+  var importHeaders = filas[0] || [];
+  var iIdx = {};
+  importHeaders.forEach(function(h, i) {
+    iIdx[String(h || '').trim().toLowerCase()] = i;
+  });
+  function g(f, name) {
+    var idx = iIdx[name.toLowerCase()];
+    return idx !== undefined ? f[idx] : '';
+  }
+
+  // Orden real de columnas en la hoja destino (para escribir en la posición correcta)
+  var factSheet  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.FACTURAS);
+  var sheetCols  = factSheet
+    .getRange(1, 1, 1, factSheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
 
   return _upsertEnSheet(
     SHEET_NAMES.FACTURAS,
     filas,
-    function(f) { return String(f[0] || '').trim(); },   // clave = Numero (col0)
+    function(f) { return String(g(f, 'número') || g(f, 'name') || '').trim(); },
     function(f) {
-      var nombre  = String(f[0] || '').trim();
-      var ref     = String(f[1] || '').trim();
-      var importe = parseFloat(String(f[2] || '').replace(',', '.')) || 0;
-      var moneda  = String(f[3] || 'EUR').trim().toUpperCase();
-      var fecha   = _parseFecha(f[4]);
-      // f[5] = Condiciones de pago — no se almacena
-      var cliente = _extractNombre(f[6]);
-      var vencimiento = _parseFecha(f[7]);
-      var pedidosRef  = String(f[8] || '').trim();
+      var nombre  = String(g(f, 'número') || g(f, 'name') || '').trim();
+      var ref     = String(g(f, 'referencia') || '').trim();
+      var importe = parseFloat(String(g(f, 'total con signo en moneda') || '').replace(',', '.')) || 0;
+      var moneda  = String(g(f, 'moneda') || 'EUR').trim().toUpperCase();
+      var fecha   = _parseFecha(g(f, 'fecha de factura'));
+      var cliente = _extractNombre(g(f, 'empresa'));
+      var venc    = _parseFecha(g(f, 'fecha de vencimiento'));
+      var pedRef  = String(g(f, 'origen') || '').trim();
+      var tDHL    = String(g(f, 'albaranes relacionados/dhl express tracking reference') || '').trim();
+      var tNum    = String(g(f, 'albaranes relacionados/número de seguimiento') || '').trim();
+      var tEnv    = String(g(f, 'albaranes relacionados/referencia de envío') || '').trim();
+      var mPago   = String(g(f, 'modo de pago') || '').trim();
 
       var esAbono = nombre.toUpperCase().indexOf('RINV/') === 0 || importe < 0;
       if (esAbono && importe > 0) importe = -importe;
       if (!esAbono && importe < 0) importe = Math.abs(importe);
 
-      // Extraer factura(s) referenciada(s) del campo ref de los abonos
-      // Solo cuando dice "Reversión de: INV/..." — extraer únicamente los INV/RINV/
       var facturasAbonadas = '';
       if (esAbono && ref) {
         var m = ref.match(/[Rr]eversi[oó]n\s+de:\s*(.+)/);
@@ -249,31 +260,34 @@ function _procesarFacturas(filas) {
           facturasAbonadas = invRefs ? invRefs.join(', ') : m[1].split(',')[0].trim();
         }
       }
-
-      // Para facturas normales, guardar el número de pedido Joor en Notas
-      // (eliminando el prefijo "PO: " que añade Gextia)
       var notas = esAbono ? '' : ref.replace(/^PO:\s*/i, '').trim();
 
-      return [
-        nombre,                              // ID_Odoo = Numero (clave estable)
-        nombre,                              // Numero
-        cliente,                             // Cliente_Nombre
-        pedidosRef,                          // Pedidos_Ref (Origen)
-        fecha,                               // Fecha
-        vencimiento,                         // Vencimiento
-        moneda,                              // Moneda
-        importe,                             // Importe
-        esAbono,                             // Es_Abono
-        facturasAbonadas,                    // Facturas_Abonadas
-        notas,                               // Notas (Pedido Joor sin prefijo)
-        String(f[9]  || '').trim(),          // Tracking_DHL
-        String(f[10] || '').trim(),          // Tracking_Seguimiento
-        String(f[11] || '').trim(),          // Tracking_Envio
-        String(f[12] || '').trim(),          // Modo_Pago
-        new Date()                           // Ultima_Actualizacion
-      ];
+      // Mapa nombre_columna → valor
+      var vals = {
+        'ID_Odoo':              nombre,
+        'Numero':               nombre,
+        'Cliente_Nombre':       cliente,
+        'Pedidos_Ref':          pedRef,
+        'Fecha':                fecha,
+        'Vencimiento':          venc,
+        'Moneda':               moneda,
+        'Importe':              importe,
+        'Es_Abono':             esAbono,
+        'Facturas_Abonadas':    facturasAbonadas,
+        'Notas':                notas,
+        'Tracking_DHL':         tDHL,
+        'Tracking_Seguimiento': tNum,
+        'Tracking_Envio':       tEnv,
+        'Modo_Pago':            mPago,
+        'Ultima_Actualizacion': new Date()
+      };
+
+      // Devuelve array en el orden real de columnas de la hoja
+      return sheetCols.map(function(h) {
+        return vals.hasOwnProperty(h) ? vals[h] : '';
+      });
     },
-    function(f) { return !String(f[0] || '').trim(); }      // saltar si no hay Numero
+    function(f) { return !String(g(f, 'número') || g(f, 'name') || '').trim(); }
   );
 }
 
