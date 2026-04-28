@@ -324,7 +324,7 @@ function _asegurarColumnasFacturas() {
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
     .map(function(h) { return String(h || '').trim(); });
 
-  var needed  = ['Tracking_DHL', 'Tracking_Seguimiento', 'Tracking_Envio', 'Modo_Pago'];
+  var needed  = ['Tracking_DHL', 'Tracking_Seguimiento', 'Tracking_Envio', 'Modo_Pago', 'Hilldun_Enviada'];
   var missing = needed.filter(function(h) { return headers.indexOf(h) === -1; });
   if (missing.length === 0) return;
 

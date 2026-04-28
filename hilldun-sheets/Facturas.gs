@@ -6,9 +6,12 @@
 // obtener la PO de Joor y con la pestaña Clientes (este mismo
 // sheet) para los datos de dirección.
 //
-// Genera dos archivos en Drive (carpeta BASE DE DATOS/Salida):
-//   · XLSX — formato PLANTILLA Hilldun (14 columnas)
-//   · CSV  — mismo contenido, separado por comas
+// Genera archivos separados por moneda en BASE DE DATOS/Salida:
+//   · Hilldun_..._EUR.xlsx / .csv
+//   · Hilldun_..._USD.xlsx / .csv
+//
+// Tras generar, marca las facturas como enviadas en Comisiones
+// (columna Hilldun_Enviada).
 //
 // PLANTILLA:
 //   InvNum | PO | InvAmt | InvDate | InvTerms |
@@ -122,8 +125,8 @@ function generarArchivoFacturas() {
   }
   var todasFacturas = _leerHojaComoObjetos(facturasSheet);
 
-  var pedidosSheet = comisionesSs.getSheetByName('Pedidos');
-  var todosPedidos = pedidosSheet ? _leerHojaComoObjetos(pedidosSheet) : [];
+  var pedidosSheet  = comisionesSs.getSheetByName('Pedidos');
+  var todosPedidos  = pedidosSheet ? _leerHojaComoObjetos(pedidosSheet) : [];
 
   // Mapa Pedidos: Numero → registro completo
   var pedidosPorNumero = {};
@@ -133,7 +136,7 @@ function generarArchivoFacturas() {
   });
 
   // Leer Clientes de este mismo sheet (Hilldun)
-  var clientesSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HILLDUN_SHEETS.CLIENTES);
+  var clientesSheet   = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HILLDUN_SHEETS.CLIENTES);
   var hilldunClientes = clientesSheet ? _leerHojaComoObjetos(clientesSheet) : [];
 
   // Mapa Hilldun Clientes: Gextia_Nombre → registro
@@ -164,15 +167,22 @@ function generarArchivoFacturas() {
     return;
   }
 
-  // Construir filas de la PLANTILLA
-  var filas = [];
-  var sinCliente = [];
+  // Construir filas separadas por moneda
+  var filasEUR    = [];
+  var filasUSD    = [];
+  var sinCliente  = [];
+  var numerosEnviados = [];
 
   facturasHilldun.forEach(function(factura) {
-    var tracking = _extraerTracking(factura);
+    var tracking      = _extraerTracking(factura);
+    var moneda        = String(factura.Moneda || 'EUR').trim().toUpperCase();
+    var clienteNombre = String(factura.Cliente_Nombre || '').trim();
+    var hc            = hilldunPorGextia[clienteNombre] || {};
+
+    if (!hilldunPorGextia[clienteNombre]) sinCliente.push(clienteNombre);
 
     // PO Joor: Pedidos_Ref → Pedidos.Referencia_Cliente
-    var po = '';
+    var po        = '';
     var pedidoRef = String(factura.Pedidos_Ref || '').trim();
     if (pedidoRef) {
       var primerRef = pedidoRef.split(',')[0].trim();
@@ -180,28 +190,30 @@ function generarArchivoFacturas() {
       if (pedido) po = String(pedido.Referencia_Cliente || '').trim();
     }
 
-    // Datos de dirección desde Hilldun Clientes
-    var clienteNombre   = String(factura.Cliente_Nombre || '').trim();
-    var hilldunCliente  = hilldunPorGextia[clienteNombre];
-    if (!hilldunCliente) sinCliente.push(clienteNombre);
-    var hc = hilldunCliente || {};
+    var fila = [
+      String(factura.Numero || '').trim(),              // InvNum
+      po,                                                // PO
+      parseFloat(factura.Importe) || 0,                 // InvAmt
+      _valorFechaStr(factura.Fecha),                    // InvDate
+      String(hc.Terminos   || '').trim(),               // InvTerms
+      String(hc.Hilldun_Nombre || clienteNombre).trim(),// CustName
+      String(hc.Direccion1 || '').trim(),               // CustAdd1
+      String(hc.Direccion2 || '').trim(),               // CustAdd2
+      String(hc.Ciudad     || '').trim(),               // CustCity
+      String(hc.Estado     || '').trim(),               // CustState
+      String(hc.CP         || '').trim(),               // CustZip
+      String(hc.Pais       || '').trim(),               // Country
+      tracking.carrier,                                  // Carrier
+      tracking.numero                                    // Tracking
+    ];
 
-    filas.push([
-      String(factura.Numero || '').trim(),                        // InvNum
-      po,                                                          // PO
-      parseFloat(factura.Importe) || 0,                           // InvAmt
-      _valorFechaStr(factura.Fecha),                              // InvDate
-      String(hc.Terminos    || '').trim(),                        // InvTerms
-      String(hc.Hilldun_Nombre || clienteNombre).trim(),          // CustName
-      String(hc.Direccion1  || '').trim(),                        // CustAdd1
-      String(hc.Direccion2  || '').trim(),                        // CustAdd2
-      String(hc.Ciudad      || '').trim(),                        // CustCity
-      String(hc.Estado      || '').trim(),                        // CustState
-      String(hc.CP          || '').trim(),                        // CustZip
-      String(hc.Pais        || '').trim(),                        // Country
-      tracking.carrier,                                            // Carrier
-      tracking.numero                                              // Tracking
-    ]);
+    if (moneda === 'USD') {
+      filasUSD.push(fila);
+    } else {
+      filasEUR.push(fila);
+    }
+
+    numerosEnviados.push(String(factura.Numero || '').trim());
   });
 
   // Obtener/crear carpeta Salida
@@ -219,17 +231,34 @@ function generarArchivoFacturas() {
     salidaFolder = DriveApp.getRootFolder();
   }
 
-  var fechaSufijo  = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
-  var nombreBase   = 'Hilldun_' + desdeStr.replace(/-/g, '') + '_' + hastaStr.replace(/-/g, '') + '_' + fechaSufijo;
+  var fechaSufijo = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyyMMdd_HHmm');
+  var periodoBase = desdeStr.replace(/-/g, '') + '_' + hastaStr.replace(/-/g, '');
+  var archivosLineas = [];
 
-  var archivoXlsx = _generarXlsx(filas, PLANTILLA_CABECERAS, nombreBase + '.xlsx', salidaFolder);
-  var archivoCsv  = _generarCsv(filas,  PLANTILLA_CABECERAS, nombreBase + '.csv',  salidaFolder);
+  if (filasEUR.length > 0) {
+    var nombreEUR = 'Hilldun_' + periodoBase + '_EUR_' + fechaSufijo;
+    _generarXlsx(filasEUR, PLANTILLA_CABECERAS, nombreEUR + '.xlsx', salidaFolder);
+    _generarCsv(filasEUR,  PLANTILLA_CABECERAS, nombreEUR + '.csv',  salidaFolder);
+    archivosLineas.push('  EUR: ' + filasEUR.length + ' factura(s) → ' + nombreEUR + '.xlsx / .csv');
+  }
 
+  if (filasUSD.length > 0) {
+    var nombreUSD = 'Hilldun_' + periodoBase + '_USD_' + fechaSufijo;
+    _generarXlsx(filasUSD, PLANTILLA_CABECERAS, nombreUSD + '.xlsx', salidaFolder);
+    _generarCsv(filasUSD,  PLANTILLA_CABECERAS, nombreUSD + '.csv',  salidaFolder);
+    archivosLineas.push('  USD: ' + filasUSD.length + ' factura(s) → ' + nombreUSD + '.xlsx / .csv');
+  }
+
+  // Marcar facturas como enviadas en Comisiones
+  var fechaEnvio   = new Date();
+  var nMarcadas    = _marcarFacturasEnviadas(comisionesSs, numerosEnviados, fechaEnvio);
   var carpetaNombre = baseDatosId ? 'BASE DE DATOS/Salida' : 'Google Drive (raíz)';
-  var msg = '✅ ' + filas.length + ' factura(s) exportada(s)\n\n'
+
+  var total = filasEUR.length + filasUSD.length;
+  var msg   = '✅ ' + total + ' factura(s) exportada(s)\n\n'
     + 'Archivos generados en ' + carpetaNombre + ':\n'
-    + '  📊 ' + archivoXlsx.getName() + '\n'
-    + '  📄 ' + archivoCsv.getName();
+    + archivosLineas.join('\n')
+    + '\n\n✉️ ' + nMarcadas + ' factura(s) marcadas como enviadas en Comisiones';
 
   if (sinCliente.length > 0) {
     var unicos = sinCliente.filter(function(v, i, a) { return a.indexOf(v) === i; });
@@ -242,13 +271,46 @@ function generarArchivoFacturas() {
   ui.alert('Archivo de facturas generado', msg, ui.ButtonSet.OK);
 }
 
+// ---- Marcar facturas como enviadas en Comisiones ----
+
+function _marcarFacturasEnviadas(comisionesSs, numerosFacturas, fechaEnvio) {
+  var factSheet = comisionesSs.getSheetByName('Facturas');
+  if (!factSheet || factSheet.getLastRow() < 2) return 0;
+
+  var numCols = factSheet.getLastColumn();
+  var headers = factSheet.getRange(1, 1, 1, numCols).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
+
+  var heCol = headers.indexOf('Hilldun_Enviada') + 1; // 1-based
+  var idCol = headers.indexOf('ID_Odoo')         + 1;
+  if (heCol === 0 || idCol === 0) return 0;
+
+  var lastRow = factSheet.getLastRow();
+  var idVals  = factSheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+
+  var numerosSet = {};
+  numerosFacturas.forEach(function(n) { numerosSet[String(n).trim()] = true; });
+
+  var marcadas = 0;
+  idVals.forEach(function(row, i) {
+    var id = String(row[0] || '').trim();
+    if (numerosSet[id]) {
+      factSheet.getRange(i + 2, heCol).setValue(fechaEnvio);
+      marcadas++;
+    }
+  });
+  return marcadas;
+}
+
 // ---- Lógica de tracking ----
 
+// Transportistas de una palabra:  DHL, FEDEX, UPS
+// Transportistas de dos palabras: DHL PARCEL
+// Formato en Tracking_Envio: "TRANSPORTISTA [SUBTIPO] NÚMERO FECHA..."
+//
 // Prioridad:
 //   1. Tracking_Envio: si no vacío y no empieza por "CONSOL"
-//      → formato "TRANSPORTISTA NUMEROSEGUIMIENTO FECHA..."
-//      → primer token = carrier, segundo token = número
-//   2. Tracking_DHL: si tiene datos → carrier = "DHL EXPRESS"
+//   2. Tracking_DHL Express: si tiene datos → carrier = "DHL EXPRESS"
 //   3. Tracking_Seguimiento: solo si empieza por "07" o "08"
 function _extraerTracking(factura) {
   var envio  = String(factura.Tracking_Envio          || '').trim();
@@ -257,6 +319,13 @@ function _extraerTracking(factura) {
 
   if (envio && envio.toUpperCase().indexOf('CONSOL') !== 0) {
     var partes = envio.split(/\s+/);
+    // Detectar transportista de dos tokens ("DHL PARCEL")
+    if (partes.length >= 3) {
+      var dosPalabras = (partes[0] + ' ' + partes[1]).toUpperCase();
+      if (dosPalabras === 'DHL PARCEL') {
+        return { carrier: 'DHL PARCEL', numero: partes[2] };
+      }
+    }
     if (partes.length >= 2) {
       return { carrier: partes[0].toUpperCase(), numero: partes[1] };
     }
@@ -324,7 +393,6 @@ function _csvEscape(val) {
 
 // ---- Utilidades ----
 
-// Lee una hoja y devuelve array de objetos {columna: valor}, filtrando filas con col0 vacío
 function _leerHojaComoObjetos(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
@@ -338,7 +406,6 @@ function _leerHojaComoObjetos(sheet) {
     });
 }
 
-// Normaliza un valor de fecha (Date o string) a 'yyyy-MM-dd'
 function _valorFechaStr(val) {
   if (!val) return '';
   if (val instanceof Date) {
@@ -352,16 +419,12 @@ function _valorFechaStr(val) {
   return s.substring(0, 10);
 }
 
-// Normaliza input del usuario a 'yyyy-mm-dd'
-// Acepta: "2026-04-01", "01/04/2026", "01-04-2026", "2026/04/01"
 function _normalizarFechaStr(str) {
   if (!str) return '';
   str = str.trim();
-  // yyyy-mm-dd o yyyy/mm/dd
   if (/^\d{4}[\-\/]\d{2}[\-\/]\d{2}$/.test(str)) {
     return str.replace(/\//g, '-');
   }
-  // dd/mm/yyyy o dd-mm-yyyy
   if (/^\d{2}[\-\/]\d{2}[\-\/]\d{4}$/.test(str)) {
     var p = str.split(/[\-\/]/);
     return p[2] + '-' + p[1] + '-' + p[0];

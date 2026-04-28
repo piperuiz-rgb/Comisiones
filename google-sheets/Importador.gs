@@ -213,6 +213,26 @@ function _procesarFacturas(filas) {
 
   _asegurarColumnasFacturas();
 
+  var ss        = SpreadsheetApp.getActiveSpreadsheet();
+  var factSheet = ss.getSheetByName(SHEET_NAMES.FACTURAS);
+  var numCols   = factSheet.getLastColumn();
+
+  // Orden real de columnas en la hoja destino (para escribir en la posición correcta)
+  var sheetCols = factSheet.getRange(1, 1, 1, numCols).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
+
+  // Preservar Hilldun_Enviada de las filas existentes (no sobreescribir al re-importar)
+  var heMap = {};
+  var heIdx = sheetCols.indexOf('Hilldun_Enviada');
+  var idIdx = sheetCols.indexOf('ID_Odoo');
+  if (heIdx !== -1 && idIdx !== -1 && factSheet.getLastRow() > 1) {
+    factSheet.getRange(2, 1, factSheet.getLastRow() - 1, numCols).getValues()
+      .forEach(function(row) {
+        var id = String(row[idIdx] || '').trim();
+        if (id) heMap[id] = row[heIdx];
+      });
+  }
+
   // Mapa cabecera→índice del archivo de importación (insensible a mayúsculas)
   var importHeaders = filas[0] || [];
   var iIdx = {};
@@ -223,12 +243,6 @@ function _procesarFacturas(filas) {
     var idx = iIdx[name.toLowerCase()];
     return idx !== undefined ? f[idx] : '';
   }
-
-  // Orden real de columnas en la hoja destino (para escribir en la posición correcta)
-  var factSheet  = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAMES.FACTURAS);
-  var sheetCols  = factSheet
-    .getRange(1, 1, 1, factSheet.getLastColumn()).getValues()[0]
-    .map(function(h) { return String(h || '').trim(); });
 
   return _upsertEnSheet(
     SHEET_NAMES.FACTURAS,
@@ -279,6 +293,7 @@ function _procesarFacturas(filas) {
         'Tracking_Seguimiento': tNum,
         'Tracking_Envio':       tEnv,
         'Modo_Pago':            mPago,
+        'Hilldun_Enviada':      heMap.hasOwnProperty(nombre) ? heMap[nombre] : '',
         'Ultima_Actualizacion': new Date()
       };
 
