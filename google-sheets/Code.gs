@@ -146,8 +146,8 @@ function crearEstructura() {
     },
     {
       nombre: SHEET_NAMES.PEDIDOS,
-      cabeceras: ['ID_Odoo', 'Numero', 'Cliente_Nombre', 'Referencia_Cliente', 'Fecha', 'Moneda', 'Importe', 'Condiciones_Pago', 'Ultima_Actualizacion', 'Total_Cobrado', 'Facturas_Ref'],
-      anchos: [180, 100, 200, 160, 100, 60, 100, 120, 140, 110, 200]
+      cabeceras: ['ID_Odoo', 'Numero', 'Cliente_Nombre', 'Referencia_Cliente', 'Fecha', 'Moneda', 'Importe', 'Condiciones_Pago', 'Ultima_Actualizacion', 'Total_Cobrado', 'Facturas_Ref', 'Hilldun_Decision'],
+      anchos: [180, 100, 200, 160, 100, 60, 100, 120, 140, 110, 200, 120]
     },
     {
       nombre: SHEET_NAMES.FACTURAS,

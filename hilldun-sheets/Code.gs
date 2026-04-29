@@ -44,6 +44,7 @@ function onOpen() {
     .addItem('🔗 Configurar enlace Comisiones', 'configurarComisionesLink')
     .addSeparator()
     .addItem('🔄 Actualizar Clientes desde Drive', 'actualizarClientesDesdeDrive')
+    .addItem('🔍 Actualizar decisión de crédito', 'actualizarDecisionCredito')
     .addItem('📊 Ver estado', 'verEstadoHilldun')
     .addSeparator()
     .addItem('📄 Generar archivo de Facturas', 'generarArchivoFacturas')

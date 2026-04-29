@@ -265,6 +265,18 @@ function actualizarResumenPedidos() {
     sheet.insertRowsAfter(sheet.getMaxRows(), totalFilas + 1 - sheet.getMaxRows());
   }
 
+  // Guardar Hilldun_Decision antes de limpiar (col fuera de PEDIDOS_NUM_COLS, solo en filas principales)
+  var hdrsStr       = headerRow.map(function(h) { return String(h || '').trim(); });
+  var hilldunDecCol = hdrsStr.indexOf('Hilldun_Decision'); // 0-based; -1 si no existe
+  var decisionMap   = {};
+  if (hilldunDecCol !== -1) {
+    allData.forEach(function(row) {
+      var id  = String(row[0] || '').trim();
+      var val = row[hilldunDecCol];
+      if (id && val !== '' && val !== null && val !== undefined) decisionMap[id] = val;
+    });
+  }
+
   // Limpiar contenido y formato de filas de datos
   sheet.getRange(2, 1, lastRow - 1, maxSheetCols).clearContent().clearFormat();
 
@@ -291,6 +303,16 @@ function actualizarResumenPedidos() {
   if (facturaA1.length) sheet.getRangeList(facturaA1).setBackground('#e8f0fe').setFontColor('#1a237e').setFontSize(9);
   if (importeA1.length) sheet.getRangeList(importeA1).setNumberFormat('#,##0.00');
   if (totalA1.length)   sheet.getRangeList(totalA1).setNumberFormat('#,##0.00');
+
+  // Restaurar Hilldun_Decision en las nuevas posiciones de filas principales
+  if (hilldunDecCol !== -1 && Object.keys(decisionMap).length > 0) {
+    var newIds    = sheet.getRange(2, 1, totalFilas, 1).getValues();
+    var decValues = newIds.map(function(row) {
+      var id = String(row[0] || '').trim();
+      return [id && decisionMap.hasOwnProperty(id) ? decisionMap[id] : ''];
+    });
+    sheet.getRange(2, hilldunDecCol + 1, totalFilas, 1).setValues(decValues);
+  }
 }
 
 function _subfilaCobro(cobro) {
