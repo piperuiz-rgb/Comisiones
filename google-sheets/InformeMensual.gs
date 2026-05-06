@@ -61,7 +61,10 @@ function generarInformeMensual() {
   // ── Facturas con cobro parcial en el mes (candidatas a comisionar) ──
   var candidatas = _calcularCandidatas(datos, fechaInicio, fechaFin);
 
-  if (cobradas.items.length === 0 && emitidas.items.length === 0 && candidatas.items.length === 0) {
+  // ── Cobros del mes (para conciliación bancaria) ──
+  var cobros = _calcularCobros(datos, fechaInicio, fechaFin);
+
+  if (cobradas.items.length === 0 && emitidas.items.length === 0 && candidatas.items.length === 0 && cobros.items.length === 0) {
     ui.alert(
       'Sin resultados',
       'No hay facturas cobradas, emitidas ni con cobro parcial en ' + NOMBRES_MES[mes - 1] + ' ' + anyo + '.\n\n' +
@@ -79,6 +82,11 @@ function generarInformeMensual() {
   var hojaCandidatas   = _crearOLimpiarTab(nombreCandidatas);
   _escribirTabCandidatas(hojaCandidatas, candidatas, mes, anyo);
 
+  // Crear cobros (conciliación bancaria)
+  var nombreCobros = 'Cobros_' + sufijo;
+  var hojaCobros   = _crearOLimpiarTab(nombreCobros);
+  _escribirTabCobros(hojaCobros, cobros, mes, anyo);
+
   // Crear emitidas
   var nombreEmitidas = 'Emitidas_' + sufijo;
   var hojaEmitidas   = _crearOLimpiarTab(nombreEmitidas);
@@ -90,10 +98,10 @@ function generarInformeMensual() {
   _escribirTabMensual(hojaCobradas, cobradas, mes, anyo);
   hojaCobradas.activate();
 
-  // Email con los tres informes
+  // Email con los cuatro informes
   var emailEnviado = false;
   try {
-    _enviarEmailResumen(cobradas, emitidas, candidatas, mes, anyo, nombreCobradas, nombreEmitidas, nombreCandidatas);
+    _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, nombreCobradas, nombreEmitidas, nombreCandidatas, nombreCobros);
     emailEnviado = true;
   } catch(e) {
     Logger.log('Error enviando email: ' + e.message);
@@ -101,7 +109,7 @@ function generarInformeMensual() {
 
   agregarHistoricoInforme(cobradas.resumenHistorico);
 
-  var msg = '✅ Pestañas creadas:\n  · ' + nombreCobradas + '\n  · ' + nombreEmitidas + '\n  · ' + nombreCandidatas;
+  var msg = '✅ Pestañas creadas:\n  · ' + nombreCobradas + '\n  · ' + nombreEmitidas + '\n  · ' + nombreCandidatas + '\n  · ' + nombreCobros;
   if (emailEnviado) msg += '\n📧 Email enviado a ' + Session.getActiveUser().getEmail();
   else              msg += '\n⚠️ No se pudo enviar el email (comprueba los permisos de Gmail).';
   ui.alert('Informe generado', msg, ui.ButtonSet.OK);
@@ -344,16 +352,17 @@ function _escribirTabEmitidas(hoja, emitidas, mes, anyo) {
 
 // ---- Email con adjuntos Excel ----
 
-function _enviarEmailResumen(cobradas, emitidas, candidatas, mes, anyo, nombreTabCobradas, nombreTabEmitidas, nombreTabCandidatas) {
+function _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, nombreTabCobradas, nombreTabEmitidas, nombreTabCandidatas, nombreTabCobros) {
   var nombreMes = NOMBRES_MES[mes - 1];
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var emailDest = Session.getActiveUser().getEmail();
 
-  // Generar los tres archivos Excel adjuntos
+  // Generar los cuatro archivos Excel adjuntos
   var adjuntos = [];
   var hojaCobradas   = ss.getSheetByName(nombreTabCobradas);
   var hojaEmitidas   = ss.getSheetByName(nombreTabEmitidas);
   var hojaCandidatas = ss.getSheetByName(nombreTabCandidatas);
+  var hojaCobros     = ss.getSheetByName(nombreTabCobros);
   if (hojaCobradas) {
     try { adjuntos.push(_hojaAExcelBlob(hojaCobradas, nombreTabCobradas)); }
     catch(e) { Logger.log('Excel cobradas: ' + e.message); }
@@ -365,6 +374,10 @@ function _enviarEmailResumen(cobradas, emitidas, candidatas, mes, anyo, nombreTa
   if (hojaCandidatas) {
     try { adjuntos.push(_hojaAExcelBlob(hojaCandidatas, nombreTabCandidatas)); }
     catch(e) { Logger.log('Excel candidatas: ' + e.message); }
+  }
+  if (hojaCobros) {
+    try { adjuntos.push(_hojaAExcelBlob(hojaCobros, nombreTabCobros)); }
+    catch(e) { Logger.log('Excel cobros: ' + e.message); }
   }
 
   // Cuerpo del correo: resumen de totales por sección
@@ -450,6 +463,31 @@ function _enviarEmailResumen(cobradas, emitidas, candidatas, mes, anyo, nombreTa
       cuerpo + '</div></div>';
   }
 
+  function _bloqueResumenCobros(cobros) {
+    if (cobros.items.length === 0) {
+      return '<p style="color:#888;margin:0;">Sin cobros este mes.</p>';
+    }
+    var filas = '';
+    ['EUR', 'USD'].forEach(function(moneda) {
+      var total = cobros.totalesPorMoneda[moneda];
+      var num   = cobros.items.filter(function(i) { return i.moneda === moneda; }).length;
+      if (!num) return;
+      filas +=
+        '<tr style="border-bottom:1px solid #eee;">' +
+        '<td style="padding:6px 12px;text-align:center;">'                     + moneda + '</td>' +
+        '<td style="padding:6px 12px;text-align:center;">'                     + num    + '</td>' +
+        '<td style="padding:6px 12px;text-align:right;font-weight:bold;">'     + _formatNum(total) + '</td>' +
+        '</tr>';
+    });
+    return '<table style="border-collapse:collapse;width:100%;font-size:13px;">' +
+           '<thead><tr style="background:#e1bee7;">' +
+           '<th style="padding:6px 12px;">Moneda</th>' +
+           '<th style="padding:6px 12px;">Cobros</th>' +
+           '<th style="padding:6px 12px;text-align:right;">Total</th>' +
+           '</tr></thead><tbody>' + filas + '</tbody></table>' +
+           '<p style="margin:8px 0 0;font-size:12px;color:#666;">Ver Excel adjunto para el detalle por fecha y factura.</p>';
+  }
+
   var html =
     '<div style="font-family:Arial,sans-serif;max-width:660px;color:#222;">' +
     '<div style="background:#1a1a2e;color:#fff;padding:14px 20px;border-radius:4px 4px 0 0;">' +
@@ -464,6 +502,8 @@ function _enviarEmailResumen(cobradas, emitidas, candidatas, mes, anyo, nombreTa
             _bloqueResumen(emitidas.porShowroom)) +
     _bloque('Candidatas a comisionar (cobro parcial)', candidatas.items.length + ' facturas', '#1b5e20',
             _bloqueResumenCandidatas(candidatas.porShowroom)) +
+    _bloque('Cobros del mes (conciliación bancaria)', cobros.items.length + ' cobro' + (cobros.items.length !== 1 ? 's' : ''), '#4a148c',
+            _bloqueResumenCobros(cobros)) +
     '<p style="color:#aaa;font-size:11px;margin-top:4px;">Generado automáticamente · Comisiones CRI</p>' +
     '</div></div>';
 
@@ -674,6 +714,126 @@ function _escribirTabCandidatas(hoja, candidatas, mes, anyo) {
   hoja.setColumnWidth(7, 120); hoja.setColumnWidth(8, 110);
   hoja.setColumnWidth(9, 110);
   hoja.setFrozenRows(0);
+}
+
+// ---- Cobros del mes (para conciliación bancaria) ----
+
+function _calcularCobros(datos, fechaInicio, fechaFin) {
+  var facturasPorNumero = {};
+  datos.facturas.forEach(function(f) {
+    var num = String(f.Numero || '').trim();
+    if (num) facturasPorNumero[num.toLowerCase()] = f;
+  });
+
+  var clientesPorNombre = groupBy(datos.clientes, 'Nombre');
+
+  var items = [];
+
+  datos.cobros.forEach(function(cobro) {
+    var fechaCobro = toDateStr(cobro.Fecha);
+    if (!fechaEnRango(fechaCobro, fechaInicio, fechaFin)) return;
+
+    var facturaRef = String(cobro.Factura_Ref || '').trim();
+    var pedidoRef  = String(cobro.Pedido_Ref  || '').trim();
+    var importe    = parseFloat(cobro.Importe) || 0;
+    var esAjuste   = cobro.Es_Ajuste === true || cobro.Es_Ajuste === 'TRUE' || cobro.Es_Ajuste === 'true';
+
+    var clienteNombre  = '';
+    var showroomNombre = '';
+    if (facturaRef) {
+      var factura = facturasPorNumero[facturaRef.toLowerCase()];
+      if (factura) {
+        clienteNombre = String(factura.Cliente_Nombre || '').trim();
+        var clientes  = clientesPorNombre[clienteNombre] || [];
+        if (clientes.length > 0) showroomNombre = String(clientes[0].Showroom_Nombre || '').trim();
+      }
+    }
+
+    items.push({
+      fecha:          fechaCobro,
+      facturaRef:     facturaRef,
+      pedidoRef:      pedidoRef,
+      clienteNombre:  clienteNombre,
+      showroomNombre: showroomNombre,
+      moneda:         String(cobro.Moneda || 'EUR'),
+      importe:        importe,
+      esAjuste:       esAjuste
+    });
+  });
+
+  items.sort(function(a, b) {
+    if (a.fecha < b.fecha) return -1;
+    if (a.fecha > b.fecha) return 1;
+    return 0;
+  });
+
+  var totalesPorMoneda = {};
+  items.forEach(function(item) {
+    var m = item.moneda || 'EUR';
+    if (!totalesPorMoneda[m]) totalesPorMoneda[m] = 0;
+    totalesPorMoneda[m] = redondear2(totalesPorMoneda[m] + item.importe);
+  });
+
+  return { items: items, totalesPorMoneda: totalesPorMoneda };
+}
+
+// ---- Pestaña: Cobros del mes ----
+
+function _escribirTabCobros(hoja, cobros, mes, anyo) {
+  var nombreMes = NOMBRES_MES[mes - 1];
+  var NUM_COLS  = 7;
+
+  hoja.getRange(1, 1, 1, NUM_COLS).merge()
+    .setValue('COBROS — ' + nombreMes.toUpperCase() + ' ' + anyo)
+    .setBackground('#4a148c').setFontColor('#ffffff')
+    .setFontSize(13).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  hoja.setRowHeight(1, 36);
+
+  hoja.getRange(2, 1, 1, NUM_COLS).merge()
+    .setValue('Generado: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') +
+              '  ·  Cobros ordenados por fecha para conciliación bancaria')
+    .setFontColor('#888888').setFontStyle('italic').setHorizontalAlignment('center');
+
+  var CABECERAS = ['Fecha cobro', 'Nº Factura', 'Pedido', 'Cliente', 'Showroom', 'Moneda', 'Importe'];
+
+  if (cobros.items.length === 0) {
+    hoja.getRange(4, 1).setValue('Sin cobros este mes.');
+    return;
+  }
+
+  hoja.getRange(3, 1, 1, NUM_COLS).setValues([CABECERAS])
+    .setBackground('#e1bee7').setFontWeight('bold').setHorizontalAlignment('center');
+
+  var fila = 4;
+  cobros.items.forEach(function(item) {
+    var colorFila = item.esAjuste ? '#fff3cd' : '#ffffff';
+    hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
+      item.fecha, item.facturaRef, item.pedidoRef,
+      item.clienteNombre, item.showroomNombre,
+      item.moneda, item.importe
+    ]]).setBackground(colorFila);
+    hoja.getRange(fila, 7).setNumberFormat('#,##0.00');
+    fila++;
+  });
+
+  ['EUR', 'USD'].forEach(function(moneda) {
+    var total = cobros.totalesPorMoneda[moneda];
+    var num   = cobros.items.filter(function(i) { return i.moneda === moneda; }).length;
+    if (!num) return;
+    hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
+      'Total ' + moneda + ' (' + num + ' cobro' + (num !== 1 ? 's' : '') + ')',
+      '', '', '', '', moneda, total
+    ]]).setBackground('#e1bee7').setFontWeight('bold');
+    hoja.getRange(fila, 7).setNumberFormat('#,##0.00');
+    fila++;
+  });
+
+  hoja.setColumnWidth(1, 110); hoja.setColumnWidth(2, 140);
+  hoja.setColumnWidth(3, 110); hoja.setColumnWidth(4, 200);
+  hoja.setColumnWidth(5, 160); hoja.setColumnWidth(6, 65);
+  hoja.setColumnWidth(7, 120);
+  hoja.setFrozenRows(3);
 }
 
 // ---- Utilidades ----
