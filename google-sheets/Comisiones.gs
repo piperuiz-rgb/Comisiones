@@ -94,9 +94,12 @@ function calcularComisionesEngine(datos, params) {
     if (clientesFactura.length === 0) return;
 
     // Iterar sobre cada showroom al que pertenece el cliente
+    var showroomsProcessados = {};
     clientesFactura.forEach(function(cliente) {
       var srNombre = String(cliente.Showroom_Nombre || '').trim();
       if (filtroShowroom && srNombre !== filtroShowroom) return;
+      if (showroomsProcessados[srNombre]) return; // evitar duplicado por cliente duplicado en Clientes
+      showroomsProcessados[srNombre] = true;
 
       var showroom = showroomPorNombre[srNombre];
       if (!showroom) return;

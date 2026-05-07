@@ -476,5 +476,59 @@ function limpiarDuplicados() {
     }
   }
 
+  // Limpiar Clientes por clave compuesta Nombre|Showroom_Nombre
+  (function() {
+    var nombre = SHEET_NAMES.CLIENTES;
+    var sheet  = ss.getSheetByName(nombre);
+    if (!sheet || sheet.getLastRow() < 2) { resumen.push(nombre + ': sin datos'); return; }
+
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                      .map(function(h) { return String(h || '').trim(); });
+    var nombreIdx    = headers.indexOf('Nombre');
+    var showroomIdx  = headers.indexOf('Showroom_Nombre');
+    var ultIdx       = headers.indexOf('Ultima_Actualizacion');
+    if (nombreIdx === -1 || showroomIdx === -1) { resumen.push(nombre + ': columnas no encontradas'); return; }
+
+    var lastRow = sheet.getLastRow();
+    var allData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+    var mejorPorClave = {};
+    allData.forEach(function(row) {
+      var clave = String(row[nombreIdx] || '').trim() + '|' + String(row[showroomIdx] || '').trim();
+      if (!clave || clave === '|') return;
+      if (!mejorPorClave[clave]) {
+        mejorPorClave[clave] = row;
+      } else {
+        var fechaActual = ultIdx !== -1 ? mejorPorClave[clave][ultIdx] : null;
+        var fechaNueva  = ultIdx !== -1 ? row[ultIdx] : null;
+        if (fechaNueva && fechaActual && fechaNueva > fechaActual) {
+          mejorPorClave[clave] = row;
+        }
+      }
+    });
+
+    var numDuplicados = allData.length - Object.keys(mejorPorClave).length;
+    if (numDuplicados === 0) { resumen.push(nombre + ': sin duplicados'); return; }
+
+    var vistos = {};
+    var filasUnicas = [];
+    allData.forEach(function(row) {
+      var clave = String(row[nombreIdx] || '').trim() + '|' + String(row[showroomIdx] || '').trim();
+      if (!clave || clave === '|' || vistos[clave]) return;
+      vistos[clave] = true;
+      filasUnicas.push(mejorPorClave[clave]);
+    });
+
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent().clearFormat();
+    sheet.getRange(2, 1, filasUnicas.length, lastCol).setValues(filasUnicas);
+    var filaFin = filasUnicas.length + 2;
+    if (sheet.getMaxRows() >= filaFin) {
+      var sobran = sheet.getMaxRows() - filaFin + 1;
+      if (sobran > 0) sheet.deleteRows(filaFin, sobran);
+    }
+    resumen.push(nombre + ': ' + numDuplicados + ' duplicado(s) eliminado(s)');
+  })();
+
   ui.alert('Limpieza completada', resumen.join('\n'), ui.ButtonSet.OK);
 }

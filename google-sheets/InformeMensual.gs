@@ -128,9 +128,12 @@ function _calcularEmitidas(datos, fechaInicio, fechaFin) {
     var esAbono  = factura.Es_Abono === true || factura.Es_Abono === 'TRUE' || factura.Es_Abono === 'true';
     var importe  = parseFloat(factura.Importe) || 0;
 
+    var showroomsProcessados = {};
     clientesFactura.forEach(function(cliente) {
       var srNombre = String(cliente.Showroom_Nombre || '').trim();
       if (!srNombre) return;
+      if (showroomsProcessados[srNombre]) return;
+      showroomsProcessados[srNombre] = true;
 
       items.push({
         showroomNombre:   srNombre,
@@ -605,9 +608,12 @@ function _calcularCandidatas(datos, fechaInicio, fechaFin) {
     var clientesFactura = clientesPorNombre[nombreCliente] || [];
     if (clientesFactura.length === 0) return;
 
+    var showroomsProcessados = {};
     clientesFactura.forEach(function(cliente) {
       var srNombre = String(cliente.Showroom_Nombre || '').trim();
       if (!srNombre) return;
+      if (showroomsProcessados[srNombre]) return;
+      showroomsProcessados[srNombre] = true;
       items.push({
         showroomNombre: srNombre,
         numero:         numero,
