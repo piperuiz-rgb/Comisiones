@@ -588,9 +588,12 @@ function _calcularCandidatas(datos, fechaInicio, fechaFin) {
     var todosCobros     = cobrosDirectos.concat(cobrosAnticipo);
     if (todosCobros.length === 0) return;
 
-    // ¿Hubo algún cobro en el mes del informe?
+    // ¿Hubo algún cobro (fecha efectiva) en el mes del informe?
+    // Cobros anteriores a la emisión se tratan como recibidos en la fecha de emisión.
+    var fechaEmisionStr = toDateStr(factura.Fecha);
     var tieneCobroEnMes = todosCobros.some(function(c) {
-      return fechaEnRango(toDateStr(c.Fecha), fechaInicio, fechaFin);
+      var fechaEfectiva = toDateStr(c.Fecha) < fechaEmisionStr ? fechaEmisionStr : toDateStr(c.Fecha);
+      return fechaEnRango(fechaEfectiva, fechaInicio, fechaFin);
     });
     if (!tieneCobroEnMes) return;
 

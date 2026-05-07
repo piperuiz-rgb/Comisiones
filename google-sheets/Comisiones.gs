@@ -61,13 +61,24 @@ function calcularComisionesEngine(datos, params) {
       return refs.indexOf(numFactura.toLowerCase()) !== -1;
     });
 
-    // Timeline de pagos: cobros + abonos ordenados cronológicamente
+    // Timeline de pagos: cobros + abonos ordenados cronológicamente.
+    // Cualquier cobro/abono anterior a la fecha de emisión de la factura
+    // se trata como recibido en esa fecha: un anticipo no puede dar por
+    // cobrada una factura que todavía no estaba emitida.
+    var fechaEmision = toDateStr(factura.Fecha);
     var pagos = [];
-    cobrosFactura.forEach(function(c) { pagos.push(c); });
+    cobrosFactura.forEach(function(c) {
+      pagos.push({
+        fecha:   c.fecha < fechaEmision ? fechaEmision : c.fecha,
+        importe: c.importe,
+        tipo:    c.tipo
+      });
+    });
     abonosFactura.forEach(function(abono) {
       var importeProp = _importeAbonoProporcional(abono, factura, facturas);
+      var fechaAbono  = toDateStr(abono.Fecha);
       pagos.push({
-        fecha:    toDateStr(abono.Fecha),
+        fecha:    fechaAbono < fechaEmision ? fechaEmision : fechaAbono,
         importe:  importeProp,
         tipo:     'abono',
         abonoNum: String(abono.Numero || '').trim()
