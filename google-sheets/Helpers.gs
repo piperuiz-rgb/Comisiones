@@ -384,6 +384,143 @@ function _asegurarColumnasFacturas() {
 }
 
 // ============================================================
+// Diagnóstico de factura — por qué no aparece en el informe
+// Accesible desde el menú: Validar datos → Diagnosticar factura
+// ============================================================
+
+function diagnosticarFactura() {
+  var ui   = SpreadsheetApp.getUi();
+  var resp = ui.prompt(
+    'Diagnosticar factura',
+    'Introduce el número de factura exacto (ej: INV/2026/000312):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var numero = resp.getResponseText().trim();
+  if (!numero) return;
+
+  var datos;
+  try { datos = cargarTodosLosDatos(); } catch(e) {
+    ui.alert('Error', e.message, ui.ButtonSet.OK); return;
+  }
+
+  var lineas = ['=== DIAGNÓSTICO: ' + numero + ' ===\n'];
+
+  // 1. Buscar la factura
+  var factura = null;
+  datos.facturas.forEach(function(f) {
+    if (String(f.Numero || '').trim() === numero) factura = f;
+  });
+
+  if (!factura) {
+    // Buscar aproximado (case-insensitive)
+    var numLower = numero.toLowerCase();
+    datos.facturas.forEach(function(f) {
+      if (String(f.Numero || '').trim().toLowerCase() === numLower) factura = f;
+    });
+    if (factura) {
+      lineas.push('⚠️ Factura encontrada solo por coincidencia case-insensitive.');
+      lineas.push('   Numero en hoja: "' + String(factura.Numero || '') + '"');
+      lineas.push('   Numero buscado: "' + numero + '"');
+    } else {
+      lineas.push('❌ Factura NO encontrada en la hoja Facturas.');
+      ui.alert('Diagnóstico', lineas.join('\n'), ui.ButtonSet.OK); return;
+    }
+  } else {
+    lineas.push('✅ Factura encontrada.');
+  }
+
+  var importeFactura = parseFloat(factura.Importe) || 0;
+  var pedidoRef      = String(factura.Pedidos_Ref || '').trim();
+  lineas.push('   Importe: ' + importeFactura + '  Moneda: ' + factura.Moneda);
+  lineas.push('   Pedidos_Ref: "' + pedidoRef + '"');
+  lineas.push('   Cliente: "' + String(factura.Cliente_Nombre || '') + '"');
+  lineas.push('   Es_Abono: ' + factura.Es_Abono);
+
+  // 2. Cobros directos por Factura_Ref
+  var cobrosDirectos = datos.cobros.filter(function(c) {
+    return String(c.Factura_Ref || '').trim() === String(factura.Numero || '').trim();
+  });
+  lineas.push('\n--- Cobros con Factura_Ref = "' + numero + '": ' + cobrosDirectos.length);
+  cobrosDirectos.forEach(function(c) {
+    lineas.push('   ' + toDateStr(c.Fecha) + '  ' + c.Importe + '  ID: ' + c.ID_Odoo);
+  });
+
+  // 3. Cobros por Pedido_Ref (anticipos, Factura_Ref vacío)
+  var cobrosAnticipo = pedidoRef
+    ? datos.cobros.filter(function(c) {
+        return !String(c.Factura_Ref || '').trim() &&
+               String(c.Pedido_Ref || '').trim() === pedidoRef;
+      })
+    : [];
+  lineas.push('\n--- Cobros anticipo con Pedido_Ref = "' + pedidoRef + '": ' + cobrosAnticipo.length);
+  cobrosAnticipo.forEach(function(c) {
+    lineas.push('   ' + toDateStr(c.Fecha) + '  ' + c.Importe + '  ID: ' + c.ID_Odoo);
+  });
+
+  // Cobros con Pedido_Ref distinto al de la factura (posible anticipo cruzado)
+  var cobrosOtrosPedidos = datos.cobros.filter(function(c) {
+    var fRef = String(c.Factura_Ref || '').trim();
+    var pRef = String(c.Pedido_Ref  || '').trim();
+    return fRef === numero && pRef && pRef !== pedidoRef;
+  });
+  if (cobrosOtrosPedidos.length > 0) {
+    lineas.push('\n--- Cobros vinculados a esta factura con Pedido_Ref DIFERENTE: ' + cobrosOtrosPedidos.length);
+    cobrosOtrosPedidos.forEach(function(c) {
+      lineas.push('   ' + toDateStr(c.Fecha) + '  ' + c.Importe + '  Pedido: ' + c.Pedido_Ref);
+    });
+  }
+
+  // 4. Acumulado
+  var pagos = cobrosDirectos.concat(cobrosAnticipo).map(function(c) {
+    return { fecha: toDateStr(c.Fecha), importe: parseFloat(c.Importe) || 0 };
+  }).sort(function(a, b) { return a.fecha < b.fecha ? -1 : 1; });
+
+  var acumulado = 0, fechaCobro100 = null;
+  var umbral = calcularUmbral(importeFactura);
+  pagos.forEach(function(p) {
+    if (!fechaCobro100) {
+      acumulado += p.importe;
+      if (acumulado >= importeFactura - umbral) fechaCobro100 = p.fecha;
+    }
+  });
+
+  lineas.push('\n--- Cálculo');
+  lineas.push('   Importe:    ' + importeFactura);
+  lineas.push('   Umbral:     ' + umbral + ' (residual tolerable)');
+  lineas.push('   Acumulado:  ' + redondear2(acumulado));
+  lineas.push('   Pendiente:  ' + redondear2(importeFactura - acumulado));
+  lineas.push('   Cobrada100: ' + (fechaCobro100 || 'NO — no alcanza el 100%'));
+
+  // 5. Cliente y showroom
+  var nombreCliente = String(factura.Cliente_Nombre || '').trim();
+  var clientesPorNombre = groupBy(datos.clientes, 'Nombre');
+  var clientesFactura = clientesPorNombre[nombreCliente] || [];
+  lineas.push('\n--- Cliente "' + nombreCliente + '": ' + clientesFactura.length + ' entrada(s) en Clientes');
+  clientesFactura.forEach(function(c) {
+    lineas.push('   Showroom: "' + c.Showroom_Nombre + '"');
+  });
+
+  // 6. Cobros con Factura_Ref similar (buscar posibles typos)
+  var cobrosConRef = datos.cobros.filter(function(c) {
+    return String(c.Factura_Ref || '').trim() !== '';
+  });
+  var candidatosCercanos = cobrosConRef.filter(function(c) {
+    var ref = String(c.Factura_Ref || '').trim().toLowerCase();
+    return ref.indexOf('000312') !== -1 || ref.indexOf('000315') !== -1;
+  });
+  if (candidatosCercanos.length > 0) {
+    lineas.push('\n--- Cobros con Factura_Ref que contiene el número (posibles coincidencias):');
+    candidatosCercanos.forEach(function(c) {
+      lineas.push('   Factura_Ref: "' + c.Factura_Ref + '"  Importe: ' + c.Importe);
+    });
+  }
+
+  Logger.log(lineas.join('\n'));
+  ui.alert('Diagnóstico: ' + numero, lineas.join('\n'), ui.ButtonSet.OK);
+}
+
+// ============================================================
 // Limpieza de duplicados
 // Elimina filas con ID_Odoo/Numero repetido en Facturas, Cobros
 // y Pedidos, conservando la fila con Ultima_Actualizacion más

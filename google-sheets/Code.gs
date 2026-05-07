@@ -22,6 +22,7 @@ function onOpen() {
     .addSeparator()
     .addItem('✅ Validar datos', 'validarDatos')
     .addItem('🧹 Limpiar duplicados', 'limpiarDuplicados')
+    .addItem('🔍 Diagnosticar factura', 'diagnosticarFactura')
     .addItem('📋 Ver histórico', 'verHistorico')
     .addSeparator()
     .addSubMenu(
