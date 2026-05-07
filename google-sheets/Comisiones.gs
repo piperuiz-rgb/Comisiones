@@ -75,12 +75,15 @@ function calcularComisionesEngine(datos, params) {
     });
     pagos.sort(function(a, b) { return a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0; });
 
-    // Buscar fecha en que acumulado alcanza el importe de la factura
-    var acumulado = 0;
+    // Buscar fecha en que acumulado alcanza el importe de la factura.
+    // Se acepta un residual menor que calcularUmbral() para absorber diferencias
+    // de redondeo o céntimos pendientes provenientes de Odoo.
+    var umbral      = calcularUmbral(importeFactura);
+    var acumulado   = 0;
     var fechaCobro100 = null;
     for (var i = 0; i < pagos.length; i++) {
       acumulado += pagos[i].importe;
-      if (acumulado >= importeFactura) {
+      if (acumulado >= importeFactura - umbral) {
         fechaCobro100 = pagos[i].fecha;
         break;
       }

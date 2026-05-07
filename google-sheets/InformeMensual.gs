@@ -599,9 +599,11 @@ function _calcularCandidatas(datos, fechaInicio, fechaFin) {
       return s + (parseFloat(c.Importe) || 0);
     }, 0));
 
-    // Cualquier importe pendiente (sin umbral) → candidata
+    // Pendiente por encima del umbral de tolerancia → candidata
+    // Si el residual es menor que calcularUmbral(), la factura se trata como cobrada
+    // y la recoge calcularComisionesEngine → no duplicar aquí
     var pendiente = redondear2(importe - totalCobrado);
-    if (pendiente <= 0) return; // cobrada al 100% exacto → la recoge el informe de cobradas
+    if (pendiente <= calcularUmbral(importe)) return;
 
     // Solo clientes con showroom asignado
     var nombreCliente   = String(factura.Cliente_Nombre || '').trim();

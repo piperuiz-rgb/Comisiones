@@ -108,6 +108,14 @@ function redondear2(valor) {
   return Math.round(valor * 100) / 100;
 }
 
+// Tolerancia para saldo residual (misma lógica que app.js calcularUmbralSaldo)
+// Si el importe pendiente es menor que este umbral, la factura se considera cobrada al 100%
+function calcularUmbral(importeFactura) {
+  if (importeFactura < 1000)  return 30;
+  if (importeFactura < 10000) return 50;
+  return 100;
+}
+
 // ---- Utilidades de lookup ----
 
 function buildMap(arr, keyField) {
