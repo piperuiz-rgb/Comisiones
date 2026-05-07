@@ -21,6 +21,7 @@ function onOpen() {
     )
     .addSeparator()
     .addItem('✅ Validar datos', 'validarDatos')
+    .addItem('🧹 Limpiar duplicados', 'limpiarDuplicados')
     .addItem('📋 Ver histórico', 'verHistorico')
     .addSeparator()
     .addSubMenu(

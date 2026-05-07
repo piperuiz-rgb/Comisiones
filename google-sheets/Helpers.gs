@@ -374,3 +374,107 @@ function _asegurarColumnasFacturas() {
     });
   }
 }
+
+// ============================================================
+// Limpieza de duplicados
+// Elimina filas con ID_Odoo/Numero repetido en Facturas, Cobros
+// y Pedidos, conservando la fila con Ultima_Actualizacion más
+// reciente. En Pedidos reconstruye las sub-filas al terminar.
+// ============================================================
+
+function limpiarDuplicados() {
+  var ui   = SpreadsheetApp.getUi();
+  var resp = ui.alert(
+    'Limpiar duplicados',
+    'Busca filas duplicadas (mismo ID/Numero) en Facturas, Cobros y Pedidos.\n\n' +
+    'Cuando hay dos filas con el mismo ID se conserva la mas reciente.\n\n' +
+    'Continuar?',
+    ui.ButtonSet.YES_NO
+  );
+  if (resp !== ui.Button.YES) return;
+
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var resumen = [];
+  var reconstruirPedidos = false;
+
+  [SHEET_NAMES.FACTURAS, SHEET_NAMES.COBROS, SHEET_NAMES.PEDIDOS].forEach(function(nombre) {
+    var sheet = ss.getSheetByName(nombre);
+    if (!sheet || sheet.getLastRow() < 2) {
+      resumen.push(nombre + ': sin datos');
+      return;
+    }
+
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                      .map(function(h) { return String(h || '').trim(); });
+    var ultIdx  = headers.indexOf('Ultima_Actualizacion'); // 0-based, -1 si no existe
+
+    var lastRow = sheet.getLastRow();
+    var allData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+    // Solo filas principales (col0 no vacío — las sub-filas de Pedidos tienen col0 vacío)
+    var principales = allData.filter(function(row) {
+      return String(row[0] || '').trim() !== '';
+    });
+
+    // Para cada ID, quedarse con la fila de Ultima_Actualizacion más reciente
+    var mejorPorId = {};
+    principales.forEach(function(row) {
+      var id = String(row[0] || '').trim();
+      if (!mejorPorId[id]) {
+        mejorPorId[id] = row;
+      } else {
+        var fechaActual = ultIdx !== -1 ? mejorPorId[id][ultIdx] : null;
+        var fechaNueva  = ultIdx !== -1 ? row[ultIdx]            : null;
+        if (fechaNueva && fechaActual && fechaNueva > fechaActual) {
+          mejorPorId[id] = row;
+        }
+      }
+    });
+
+    var numDuplicados = principales.length - Object.keys(mejorPorId).length;
+
+    if (numDuplicados === 0) {
+      resumen.push(nombre + ': sin duplicados');
+      return;
+    }
+
+    // Reconstruir la lista en el orden de primera aparición, usando la versión más reciente
+    var vistos     = {};
+    var filasUnicas = [];
+    principales.forEach(function(row) {
+      var id = String(row[0] || '').trim();
+      if (!vistos[id]) {
+        vistos[id] = true;
+        filasUnicas.push(mejorPorId[id]);
+      }
+    });
+
+    // Limpiar hoja y reescribir sin duplicados
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent().clearFormat();
+    sheet.getRange(2, 1, filasUnicas.length, lastCol).setValues(filasUnicas);
+
+    // Eliminar filas vacías sobrantes
+    var filaFin = filasUnicas.length + 2;
+    if (sheet.getMaxRows() >= filaFin) {
+      var sobran = sheet.getMaxRows() - filaFin + 1;
+      if (sobran > 0) sheet.deleteRows(filaFin, sobran);
+    }
+
+    if (nombre === SHEET_NAMES.PEDIDOS) reconstruirPedidos = true;
+
+    resumen.push(nombre + ': ' + numDuplicados + ' duplicado(s) eliminado(s)');
+  });
+
+  // Reconstruir sub-filas de Pedidos si se limpiaron duplicados en esa hoja
+  if (reconstruirPedidos) {
+    try {
+      actualizarResumenPedidos();
+      resumen.push('Pedidos: sub-filas reconstruidas correctamente');
+    } catch(e) {
+      resumen.push('Pedidos: error al reconstruir sub-filas - ' + e.message);
+    }
+  }
+
+  ui.alert('Limpieza completada', resumen.join('\n'), ui.ButtonSet.OK);
+}
