@@ -77,11 +77,6 @@ function generarInformeMensual() {
   var nombreMes    = NOMBRES_MES[mes - 1];
   var sufijo       = nombreMes + '_' + anyo;
 
-  // Crear candidatas primero (posición más al fondo)
-  var nombreCandidatas = 'Candidatas_' + sufijo;
-  var hojaCandidatas   = _crearOLimpiarTab(nombreCandidatas);
-  _escribirTabCandidatas(hojaCandidatas, candidatas, mes, anyo);
-
   // Crear cobros (conciliación bancaria)
   var nombreCobros = 'Cobros_' + sufijo;
   var hojaCobros   = _crearOLimpiarTab(nombreCobros);
@@ -92,16 +87,16 @@ function generarInformeMensual() {
   var hojaEmitidas   = _crearOLimpiarTab(nombreEmitidas);
   _escribirTabEmitidas(hojaEmitidas, emitidas, mes, anyo);
 
-  // Crear cobradas → va a posición 2
+  // Crear cobradas (100% + parciales en naranja) → va a posición 2
   var nombreCobradas = 'Cobradas_' + sufijo;
   var hojaCobradas   = _crearOLimpiarTab(nombreCobradas);
-  _escribirTabMensual(hojaCobradas, cobradas, mes, anyo);
+  _escribirTabMensual(hojaCobradas, cobradas, candidatas, mes, anyo);
   hojaCobradas.activate();
 
-  // Email con los cuatro informes
+  // Email con los tres informes
   var emailEnviado = false;
   try {
-    _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, nombreCobradas, nombreEmitidas, nombreCandidatas, nombreCobros);
+    _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, nombreCobradas, nombreEmitidas, nombreCobros);
     emailEnviado = true;
   } catch(e) {
     Logger.log('Error enviando email: ' + e.message);
@@ -109,7 +104,8 @@ function generarInformeMensual() {
 
   agregarHistoricoInforme(cobradas.resumenHistorico);
 
-  var msg = '✅ Pestañas creadas:\n  · ' + nombreCobradas + '\n  · ' + nombreEmitidas + '\n  · ' + nombreCandidatas + '\n  · ' + nombreCobros;
+  var parcialNote = candidatas.items.length > 0 ? ' (+ ' + candidatas.items.length + ' parciales en naranja)' : '';
+  var msg = '✅ Pestañas creadas:\n  · ' + nombreCobradas + parcialNote + '\n  · ' + nombreEmitidas + '\n  · ' + nombreCobros;
   if (emailEnviado) msg += '\n📧 Email enviado a ' + Session.getActiveUser().getEmail();
   else              msg += '\n⚠️ No se pudo enviar el email (comprueba los permisos de Gmail).';
   ui.alert('Informe generado', msg, ui.ButtonSet.OK);
@@ -187,14 +183,14 @@ function _crearOLimpiarTab(nombre) {
   return hoja;
 }
 
-// ---- Pestaña: Facturas cobradas al 100% ----
+// ---- Pestaña: Facturas cobradas (100% + parciales en naranja) ----
 
-function _escribirTabMensual(hoja, resultado, mes, anyo) {
+function _escribirTabMensual(hoja, resultado, candidatas, mes, anyo) {
   var nombreMes = NOMBRES_MES[mes - 1];
   var NUM_COLS  = 9;
 
   hoja.getRange(1, 1, 1, NUM_COLS).merge()
-    .setValue('FACTURAS COBRADAS AL 100% — ' + nombreMes.toUpperCase() + ' ' + anyo)
+    .setValue('FACTURAS COBRADAS — ' + nombreMes.toUpperCase() + ' ' + anyo)
     .setBackground('#1a1a2e').setFontColor('#ffffff')
     .setFontSize(13).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
@@ -204,19 +200,71 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
     .setValue('Generado: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm'))
     .setFontColor('#888888').setFontStyle('italic').setHorizontalAlignment('center');
 
+  hoja.getRange(3, 1, 1, NUM_COLS).merge()
+    .setValue('⬜ Cobrada al 100%     🟧 Cobro parcial (pendiente de cobro total)     🟨 Abono')
+    .setFontStyle('italic').setFontColor('#555555').setHorizontalAlignment('center');
+
   var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Fecha cobro 100%', 'Pedido origen', 'Pedido Joor', 'Cliente', 'Moneda', 'Importe factura', 'Total cobrado'];
 
-  if (resultado.items.length === 0) {
-    hoja.getRange(4, 1).setValue('Sin facturas cobradas al 100% este mes.');
+  // Construir mapa combinado por showroom: primero cobradas, luego parciales
+  var mergedPorShowroom = {};
+
+  Object.keys(resultado.porShowroom).forEach(function(srNombre) {
+    if (!mergedPorShowroom[srNombre]) mergedPorShowroom[srNombre] = { items: [] };
+    resultado.porShowroom[srNombre].items.forEach(function(item) {
+      mergedPorShowroom[srNombre].items.push({
+        esAbono:       item.esAbono,
+        parcial:       false,
+        numero:        item.numero,
+        clienteNombre: item.clienteNombre,
+        pedidosRef:    item.pedidosRef,
+        refCliente:    item.refCliente || '',
+        fechaEmision:  item.fechaEmision,
+        fechaCobro100: item.fechaCobro100,
+        moneda:        item.moneda,
+        importe:       item.importe,
+        totalCobrado:  item.totalCobrado
+      });
+    });
+  });
+
+  if (candidatas && candidatas.porShowroom) {
+    Object.keys(candidatas.porShowroom).forEach(function(srNombre) {
+      if (!mergedPorShowroom[srNombre]) mergedPorShowroom[srNombre] = { items: [] };
+      candidatas.porShowroom[srNombre].items.forEach(function(item) {
+        mergedPorShowroom[srNombre].items.push({
+          esAbono:       false,
+          parcial:       true,
+          numero:        item.numero,
+          clienteNombre: item.clienteNombre,
+          pedidosRef:    item.pedidosRef,
+          refCliente:    item.refCliente || '',
+          fechaEmision:  item.fechaEmision,
+          fechaCobro100: '',
+          moneda:        item.moneda,
+          importe:       item.importe,
+          totalCobrado:  item.totalCobrado
+        });
+      });
+    });
+  }
+
+  var totalItems = Object.keys(mergedPorShowroom).reduce(function(s, k) {
+    return s + mergedPorShowroom[k].items.length;
+  }, 0);
+
+  if (totalItems === 0) {
+    hoja.getRange(5, 1).setValue('Sin facturas cobradas este mes.');
     return;
   }
 
   // Columna "Pedido Joor" en formato texto para evitar decimales en códigos numéricos
-  hoja.getRange(4, 5, 2000, 1).setNumberFormat('@');
+  hoja.getRange(5, 5, 2000, 1).setNumberFormat('@');
 
-  var fila = 4;
-  Object.keys(resultado.porShowroom).forEach(function(srNombre) {
-    var grupo = resultado.porShowroom[srNombre];
+  var fila = 5;
+  Object.keys(mergedPorShowroom).forEach(function(srNombre) {
+    var grupo = mergedPorShowroom[srNombre];
+    if (grupo.items.length === 0) return;
 
     hoja.getRange(fila, 1, 1, NUM_COLS).merge()
       .setValue('▶  ' + srNombre)
@@ -230,11 +278,15 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
     var subtotalesPorMoneda = {};
 
     grupo.items.forEach(function(item) {
-      var colorFila      = item.esAbono ? '#fff3cd' : '#ffffff';
+      var colorFila;
+      if (item.parcial)       colorFila = '#ffe0b2'; // naranja claro: cobro parcial
+      else if (item.esAbono)  colorFila = '#fff3cd'; // amarillo: abono
+      else                    colorFila = '#ffffff';  // blanco: cobrada al 100%
+
       var cobradoMostrar = item.esAbono ? '' : Math.min(item.totalCobrado, item.importe);
       hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
         item.numero, item.fechaEmision, item.fechaCobro100,
-        item.pedidosRef, item.refCliente || '',
+        item.pedidosRef, item.refCliente,
         item.clienteNombre, item.moneda, item.importe, cobradoMostrar
       ]]).setBackground(colorFila);
       hoja.getRange(fila, 8).setNumberFormat('#,##0.00');
@@ -243,7 +295,7 @@ function _escribirTabMensual(hoja, resultado, mes, anyo) {
       var m = item.moneda || 'EUR';
       if (!subtotalesPorMoneda[m]) subtotalesPorMoneda[m] = { importe: 0, cobrado: 0, num: 0 };
       subtotalesPorMoneda[m].importe = redondear2(subtotalesPorMoneda[m].importe + Math.abs(item.importe));
-      subtotalesPorMoneda[m].cobrado = redondear2(subtotalesPorMoneda[m].cobrado + (item.esAbono ? 0 : cobradoMostrar));
+      subtotalesPorMoneda[m].cobrado = redondear2(subtotalesPorMoneda[m].cobrado + (item.esAbono ? 0 : (cobradoMostrar || 0)));
       subtotalesPorMoneda[m].num++;
       fila++;
     });
@@ -352,17 +404,16 @@ function _escribirTabEmitidas(hoja, emitidas, mes, anyo) {
 
 // ---- Email con adjuntos Excel ----
 
-function _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, nombreTabCobradas, nombreTabEmitidas, nombreTabCandidatas, nombreTabCobros) {
+function _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, nombreTabCobradas, nombreTabEmitidas, nombreTabCobros) {
   var nombreMes = NOMBRES_MES[mes - 1];
   var ss        = SpreadsheetApp.getActiveSpreadsheet();
   var emailDest = Session.getActiveUser().getEmail();
 
-  // Generar los cuatro archivos Excel adjuntos
+  // Generar los tres archivos Excel adjuntos
   var adjuntos = [];
-  var hojaCobradas   = ss.getSheetByName(nombreTabCobradas);
-  var hojaEmitidas   = ss.getSheetByName(nombreTabEmitidas);
-  var hojaCandidatas = ss.getSheetByName(nombreTabCandidatas);
-  var hojaCobros     = ss.getSheetByName(nombreTabCobros);
+  var hojaCobradas = ss.getSheetByName(nombreTabCobradas);
+  var hojaEmitidas = ss.getSheetByName(nombreTabEmitidas);
+  var hojaCobros   = ss.getSheetByName(nombreTabCobros);
   if (hojaCobradas) {
     try { adjuntos.push(_hojaAExcelBlob(hojaCobradas, nombreTabCobradas)); }
     catch(e) { Logger.log('Excel cobradas: ' + e.message); }
@@ -371,54 +422,12 @@ function _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, 
     try { adjuntos.push(_hojaAExcelBlob(hojaEmitidas, nombreTabEmitidas)); }
     catch(e) { Logger.log('Excel emitidas: ' + e.message); }
   }
-  if (hojaCandidatas) {
-    try { adjuntos.push(_hojaAExcelBlob(hojaCandidatas, nombreTabCandidatas)); }
-    catch(e) { Logger.log('Excel candidatas: ' + e.message); }
-  }
   if (hojaCobros) {
     try { adjuntos.push(_hojaAExcelBlob(hojaCobros, nombreTabCobros)); }
     catch(e) { Logger.log('Excel cobros: ' + e.message); }
   }
 
   // Cuerpo del correo: resumen de totales por sección
-  function _bloqueResumenCandidatas(porShowroom) {
-    var filas = '';
-    var totalEUR = 0, totalUSD = 0;
-    Object.keys(porShowroom).forEach(function(srNombre) {
-      var grupo = porShowroom[srNombre];
-      ['EUR', 'USD'].forEach(function(moneda) {
-        var t = grupo.totalesPorMoneda[moneda];
-        if (!t || t.importe === 0) return;
-        var num = grupo.items.filter(function(i) { return i.moneda === moneda; }).length;
-        filas +=
-          '<tr style="border-bottom:1px solid #eee;">' +
-          '<td style="padding:6px 12px;">'                                        + srNombre + '</td>' +
-          '<td style="padding:6px 12px;text-align:center;">'                      + moneda   + '</td>' +
-          '<td style="padding:6px 12px;text-align:right;">'                       + _formatNum(t.importe)   + '</td>' +
-          '<td style="padding:6px 12px;text-align:right;">'                       + _formatNum(t.cobrado)   + '</td>' +
-          '<td style="padding:6px 12px;text-align:right;font-weight:bold;color:#b71c1c;">' + _formatNum(t.pendiente) + '</td>' +
-          '<td style="padding:6px 12px;text-align:center;color:#666;">'           + num      + '</td>' +
-          '</tr>';
-        if (moneda === 'EUR') totalEUR = redondear2(totalEUR + t.pendiente);
-        if (moneda === 'USD') totalUSD = redondear2(totalUSD + t.pendiente);
-      });
-    });
-    if (!filas) return '<p style="color:#888;margin:0;">Sin facturas con cobro parcial este mes.</p>';
-    var pie = '';
-    if (totalEUR) pie += '<strong>Pendiente EUR: ' + _formatNum(totalEUR) + ' €</strong><br>';
-    if (totalUSD) pie += '<strong>Pendiente USD: $' + _formatNum(totalUSD) + '</strong>';
-    return '<table style="border-collapse:collapse;width:100%;font-size:13px;">' +
-           '<thead><tr style="background:#c8e6c9;">' +
-           '<th style="padding:6px 12px;text-align:left;">Showroom</th>' +
-           '<th style="padding:6px 12px;">Moneda</th>' +
-           '<th style="padding:6px 12px;text-align:right;">Facturado</th>' +
-           '<th style="padding:6px 12px;text-align:right;">Cobrado</th>' +
-           '<th style="padding:6px 12px;text-align:right;">Pendiente</th>' +
-           '<th style="padding:6px 12px;">Líneas</th>' +
-           '</tr></thead><tbody>' + filas + '</tbody></table>' +
-           '<p style="margin:10px 0 0;">' + pie + '</p>';
-  }
-
   function _bloqueResumen(porShowroom) {
     var filas = '';
     var totalEUR = 0, totalUSD = 0;
@@ -463,6 +472,13 @@ function _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, 
       cuerpo + '</div></div>';
   }
 
+  var notaParciales = candidatas && candidatas.items.length > 0
+    ? '<p style="margin:10px 0 0;color:#e65100;font-size:12px;">⚠️ ' + candidatas.items.length +
+      ' factura' + (candidatas.items.length !== 1 ? 's' : '') +
+      ' con cobro parcial incluida' + (candidatas.items.length !== 1 ? 's' : '') +
+      ' en el Excel adjunto (marcadas en naranja).</p>'
+    : '';
+
   function _bloqueResumenCobros(cobros) {
     if (cobros.items.length === 0) {
       return '<p style="color:#888;margin:0;">Sin cobros este mes.</p>';
@@ -496,12 +512,10 @@ function _enviarEmailResumen(cobradas, emitidas, candidatas, cobros, mes, anyo, 
     (adjuntos.length > 0 ? adjuntos.length + ' archivo(s) Excel adjunto(s)' : 'sin adjuntos') +
     '</p></div>' +
     '<div style="padding:20px;">' +
-    _bloque('Facturas cobradas al 100%', cobradas.items.length + ' facturas', '#1a1a2e',
-            _bloqueResumen(cobradas.porShowroom)) +
+    _bloque('Facturas cobradas', cobradas.items.length + ' al 100%' + (candidatas && candidatas.items.length > 0 ? ' · ' + candidatas.items.length + ' parciales' : ''), '#1a1a2e',
+            _bloqueResumen(cobradas.porShowroom) + notaParciales) +
     _bloque('Facturas emitidas', emitidas.items.length + ' facturas', '#0f3460',
             _bloqueResumen(emitidas.porShowroom)) +
-    _bloque('Candidatas a comisionar (cobro parcial)', candidatas.items.length + ' facturas', '#1b5e20',
-            _bloqueResumenCandidatas(candidatas.porShowroom)) +
     _bloque('Cobros del mes (conciliación bancaria)', cobros.items.length + ' cobro' + (cobros.items.length !== 1 ? 's' : ''), '#4a148c',
             _bloqueResumenCobros(cobros)) +
     '<p style="color:#aaa;font-size:11px;margin-top:4px;">Generado automáticamente · Comisiones CRI</p>' +
@@ -628,93 +642,6 @@ function _calcularCandidatas(datos, fechaInicio, fechaFin) {
   return { items: items, porShowroom: porShowroom };
 }
 
-// ---- Pestaña: Facturas con cobro parcial ----
-
-function _escribirTabCandidatas(hoja, candidatas, mes, anyo) {
-  var nombreMes = NOMBRES_MES[mes - 1];
-  var NUM_COLS  = 9;
-
-  hoja.getRange(1, 1, 1, NUM_COLS).merge()
-    .setValue('FACTURAS CON COBRO PARCIAL — ' + nombreMes.toUpperCase() + ' ' + anyo)
-    .setBackground('#1b5e20').setFontColor('#ffffff')
-    .setFontSize(13).setFontWeight('bold')
-    .setHorizontalAlignment('center').setVerticalAlignment('middle');
-  hoja.setRowHeight(1, 36);
-
-  hoja.getRange(2, 1, 1, NUM_COLS).merge()
-    .setValue('Generado: ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm') +
-              '  ·  Facturas con al menos un cobro en el mes pero pendientes de cobro total')
-    .setFontColor('#888888').setFontStyle('italic').setHorizontalAlignment('center');
-
-  var CABECERAS = ['Nº Factura', 'Fecha emisión', 'Pedido origen', 'Pedido Joor', 'Cliente', 'Moneda', 'Importe factura', 'Total cobrado', 'Pendiente'];
-
-  if (candidatas.items.length === 0) {
-    hoja.getRange(4, 1).setValue('Sin facturas con cobro parcial este mes.');
-    return;
-  }
-
-  // Columna "Pedido Joor" en formato texto
-  hoja.getRange(4, 4, 2000, 1).setNumberFormat('@');
-
-  var fila = 4;
-  Object.keys(candidatas.porShowroom).forEach(function(srNombre) {
-    var grupo = candidatas.porShowroom[srNombre];
-
-    hoja.getRange(fila, 1, 1, NUM_COLS).merge()
-      .setValue('▶  ' + srNombre)
-      .setBackground('#1b5e20').setFontColor('#ffffff').setFontWeight('bold').setFontSize(11);
-    fila++;
-
-    hoja.getRange(fila, 1, 1, NUM_COLS).setValues([CABECERAS])
-      .setBackground('#c8e6c9').setFontWeight('bold').setHorizontalAlignment('center');
-    fila++;
-
-    var subtotalesPorMoneda = {};
-
-    grupo.items.forEach(function(item) {
-      hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
-        item.numero, item.fechaEmision,
-        item.pedidosRef, item.refCliente || '',
-        item.clienteNombre, item.moneda,
-        item.importe, item.totalCobrado, item.pendiente
-      ]]).setBackground('#ffffff');
-      hoja.getRange(fila, 7).setNumberFormat('#,##0.00');
-      hoja.getRange(fila, 8).setNumberFormat('#,##0.00');
-      hoja.getRange(fila, 9).setNumberFormat('#,##0.00')
-        .setFontColor('#b71c1c').setFontWeight('bold');
-
-      var m = item.moneda || 'EUR';
-      if (!subtotalesPorMoneda[m]) subtotalesPorMoneda[m] = { importe: 0, cobrado: 0, pendiente: 0, num: 0 };
-      subtotalesPorMoneda[m].importe   = redondear2(subtotalesPorMoneda[m].importe   + item.importe);
-      subtotalesPorMoneda[m].cobrado   = redondear2(subtotalesPorMoneda[m].cobrado   + item.totalCobrado);
-      subtotalesPorMoneda[m].pendiente = redondear2(subtotalesPorMoneda[m].pendiente + item.pendiente);
-      subtotalesPorMoneda[m].num++;
-      fila++;
-    });
-
-    ['EUR', 'USD'].forEach(function(moneda) {
-      var t = subtotalesPorMoneda[moneda];
-      if (!t || t.num === 0) return;
-      hoja.getRange(fila, 1, 1, NUM_COLS).setValues([[
-        'Subtotal ' + moneda + ' (' + t.num + ' línea' + (t.num !== 1 ? 's' : '') + ')',
-        '', '', '', '', moneda, t.importe, t.cobrado, t.pendiente
-      ]]).setBackground('#e8f5e9').setFontWeight('bold');
-      hoja.getRange(fila, 7).setNumberFormat('#,##0.00');
-      hoja.getRange(fila, 8).setNumberFormat('#,##0.00');
-      hoja.getRange(fila, 9).setNumberFormat('#,##0.00');
-      fila++;
-    });
-
-    fila++;
-  });
-
-  hoja.setColumnWidth(1, 140); hoja.setColumnWidth(2, 110);
-  hoja.setColumnWidth(3, 110); hoja.setColumnWidth(4, 160);
-  hoja.setColumnWidth(5, 220); hoja.setColumnWidth(6, 65);
-  hoja.setColumnWidth(7, 120); hoja.setColumnWidth(8, 110);
-  hoja.setColumnWidth(9, 110);
-  hoja.setFrozenRows(0);
-}
 
 // ---- Cobros del mes (para conciliación bancaria) ----
 
