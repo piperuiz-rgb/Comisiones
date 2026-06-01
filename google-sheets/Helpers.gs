@@ -1,0 +1,679 @@
+// ============================================================
+// Helpers.gs — Utilidades y acceso a datos de Google Sheets
+// ============================================================
+
+var SHEET_NAMES = {
+  SHOWROOMS:    'Showrooms',
+  CLIENTES:     'Clientes',
+  PEDIDOS:      'Pedidos',
+  FACTURAS:     'Facturas',
+  COBROS:       'Cobros',
+  LIQUIDACIONES:'Liquidaciones',
+  HISTORICO:    'Historico_Informes',
+  TEMP:         'TEMP_Import'
+};
+
+// ---- Lectura de datos ----
+
+function getSheetData(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error('No se encontró la hoja: ' + sheetName);
+  var data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+  var headers = data[0];
+  return data.slice(1)
+    .filter(function(row) { return row[0] !== '' && row[0] !== null; })
+    .map(function(row) {
+      var obj = {};
+      headers.forEach(function(h, i) { obj[h] = row[i]; });
+      return obj;
+    });
+}
+
+function cargarTodosLosDatos() {
+  return {
+    showrooms:  getSheetData(SHEET_NAMES.SHOWROOMS),
+    clientes:   getSheetData(SHEET_NAMES.CLIENTES),
+    facturas:   getSheetData(SHEET_NAMES.FACTURAS),
+    cobros:     getSheetData(SHEET_NAMES.COBROS)
+  };
+}
+
+function agregarHistoricoInforme(resumen) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAMES.HISTORICO);
+  if (!sheet) return;
+  sheet.appendRow([
+    new Date(),
+    resumen.periodoInicio,
+    resumen.periodoFin,
+    resumen.showroomFiltro || 'Todos',
+    resumen.totalEURFacturado,
+    resumen.totalEURComision,
+    resumen.totalUSDFacturado,
+    resumen.totalUSDComision,
+    resumen.numFacturas
+  ]);
+}
+
+// ---- Escritura de datos ----
+
+function escribirSheetData(sheetName, registros) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) throw new Error('No se encontró la hoja: ' + sheetName);
+
+  var encabezados = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var filas = registros.map(function(r) {
+    return encabezados.map(function(h) { return r[h] !== undefined ? r[h] : ''; });
+  });
+
+  // Borrar filas de datos (mantener encabezados)
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+  }
+
+  if (filas.length > 0) {
+    sheet.getRange(2, 1, filas.length, encabezados.length).setValues(filas);
+  }
+}
+
+// ---- Utilidades de fecha ----
+
+// Normaliza cualquier valor a string 'yyyy-MM-dd'. Crítico: Apps Script devuelve
+// objetos Date desde las celdas, no strings.
+function toDateStr(val) {
+  if (!val) return null;
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  }
+  var s = String(val).trim();
+  // Soportar formatos dd/MM/yyyy y dd-MM-yyyy además de yyyy-MM-dd
+  if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(s)) {
+    var parts = s.split(/[\/\-]/);
+    return parts[2] + '-' + parts[1] + '-' + parts[0];
+  }
+  return s.substring(0, 10);
+}
+
+function fechaEnRango(fechaStr, inicioStr, finStr) {
+  if (!fechaStr || !inicioStr || !finStr) return false;
+  return fechaStr >= inicioStr && fechaStr <= finStr;
+}
+
+// ---- Utilidades numéricas ----
+
+function redondear2(valor) {
+  return Math.round(valor * 100) / 100;
+}
+
+// Tolerancia para saldo residual (misma lógica que app.js calcularUmbralSaldo)
+// Si el importe pendiente es menor que este umbral, la factura se considera cobrada al 100%
+function calcularUmbral(importeFactura) {
+  if (importeFactura < 1000)  return 30;
+  if (importeFactura < 10000) return 50;
+  return 100;
+}
+
+// ---- Utilidades de lookup ----
+
+function buildMap(arr, keyField) {
+  var map = {};
+  arr.forEach(function(item) {
+    var k = String(item[keyField] || '').trim();
+    if (k) map[k] = item;
+  });
+  return map;
+}
+
+function buildMapCI(arr, keyField) {
+  // Case-insensitive map
+  var map = {};
+  arr.forEach(function(item) {
+    var k = String(item[keyField] || '').trim().toLowerCase();
+    if (k) map[k] = item;
+  });
+  return map;
+}
+
+function groupBy(arr, keyField) {
+  var map = {};
+  arr.forEach(function(item) {
+    var k = String(item[keyField] || '').trim();
+    if (!map[k]) map[k] = [];
+    map[k].push(item);
+  });
+  return map;
+}
+
+function splitRefs(str) {
+  return String(str || '').split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+}
+
+// ---- Generador de ID ----
+
+function generarId() {
+  return Utilities.getUuid().replace(/-/g, '').substring(0, 12);
+}
+
+// ---- Formateo de números ----
+
+function formatMoneda(valor, moneda) {
+  var abs = Math.abs(valor).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  abs = abs.replace('.', 'TEMP').replace(/\./g, ',').replace('TEMP', '.');
+  return (valor < 0 ? '-' : '') + (moneda === 'USD' ? '$' + abs : abs + ' €');
+}
+
+// ============================================================
+// Resumen de pedidos — añade sub-filas de cobros y facturas
+// bajo cada fila de pedido, y actualiza las columnas derivadas
+// Total_Cobrado y Facturas_Ref.
+//
+// Las sub-filas tienen col0 vacío, por lo que getSheetData()
+// y _upsertEnSheet() las ignoran automáticamente.
+// Se llama al importar Pedidos, Facturas o Cobros.
+// ============================================================
+
+var PEDIDOS_NUM_COLS = 11; // 9 originales + Total_Cobrado + Facturas_Ref
+
+function actualizarResumenPedidos() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAMES.PEDIDOS);
+  if (!sheet || sheet.getLastRow() < 2) return;
+
+  // Asegurar que las nuevas cabeceras existen
+  var maxSheetCols = Math.max(sheet.getLastColumn(), PEDIDOS_NUM_COLS);
+  var headerRow = sheet.getRange(1, 1, 1, maxSheetCols).getValues()[0];
+  if (!headerRow[9]) {
+    sheet.getRange(1, 10).setValue('Total_Cobrado')
+         .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setColumnWidth(10, 110);
+  }
+  if (!headerRow[10]) {
+    sheet.getRange(1, 11).setValue('Facturas_Ref')
+         .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setColumnWidth(11, 200);
+  }
+
+  // Datos relacionados (getSheetData filtra sub-filas por col0 vacío)
+  var cobros       = getSheetData(SHEET_NAMES.COBROS);
+  var facturasNorm = getSheetData(SHEET_NAMES.FACTURAS).filter(function(f) {
+    return !(f.Es_Abono === true || f.Es_Abono === 'TRUE' || f.Es_Abono === 'true');
+  });
+
+  var cobrosDirectosPorPedido = groupBy(
+    cobros.filter(function(c) { return !String(c.Factura_Ref || '').trim(); }),
+    'Pedido_Ref'
+  );
+  var cobrosParaFactura  = groupBy(cobros, 'Factura_Ref');
+  var facturasParaPedido = groupBy(facturasNorm, 'Pedidos_Ref');
+
+  // Leer todas las filas de la hoja (include sub-filas existentes)
+  var lastRow = sheet.getLastRow();
+  var allData = sheet.getRange(2, 1, lastRow - 1, maxSheetCols).getValues();
+
+  // Solo filas principales (col0 no vacío)
+  var filasPrincipales = allData.filter(function(row) {
+    return String(row[0] || '').trim() !== '';
+  });
+  if (filasPrincipales.length === 0) return;
+
+  // Construir nuevo contenido: principales + sub-filas
+  var resultado = [];
+
+  filasPrincipales.forEach(function(pedidoRow) {
+    var numPedido = String(pedidoRow[0] || '').trim();
+
+    var facturasDelPedido = (facturasParaPedido[numPedido] || []).slice()
+      .sort(function(a, b) { return toDateStr(a.Fecha) < toDateStr(b.Fecha) ? -1 : 1; });
+
+    var cobrosDirectos = (cobrosDirectosPorPedido[numPedido] || []).slice()
+      .sort(function(a, b) { return toDateStr(a.Fecha) < toDateStr(b.Fecha) ? -1 : 1; });
+
+    // Total cobrado: anticipos directos + cobros sobre facturas del pedido
+    var totalCobrado = 0;
+    cobrosDirectos.forEach(function(c) { totalCobrado += parseFloat(c.Importe) || 0; });
+    facturasDelPedido.forEach(function(f) {
+      (cobrosParaFactura[String(f.Numero || '').trim()] || [])
+        .forEach(function(c) { totalCobrado += parseFloat(c.Importe) || 0; });
+    });
+    totalCobrado = redondear2(totalCobrado);
+
+    var facturasRef = facturasDelPedido.map(function(f) { return f.Numero; }).join(', ');
+
+    // Fila principal con columnas derivadas
+    resultado.push({ tipo: 'principal', fila: [
+      pedidoRow[0] || '', pedidoRow[1] || '', pedidoRow[2] || '', pedidoRow[3] || '',
+      pedidoRow[4] || '', pedidoRow[5] || '', pedidoRow[6] || '', pedidoRow[7] || '',
+      pedidoRow[8] || '',
+      totalCobrado !== 0 ? totalCobrado : '',
+      facturasRef
+    ]});
+
+    // Sub-filas: cobros directos (anticipos sin factura)
+    cobrosDirectos.forEach(function(c) {
+      resultado.push({ tipo: 'cobro', fila: _subfilaCobro(c) });
+    });
+
+    // Sub-filas: cada factura y sus cobros
+    facturasDelPedido.forEach(function(factura) {
+      resultado.push({ tipo: 'factura', fila: _subfilaFactura(factura) });
+      (cobrosParaFactura[String(factura.Numero || '').trim()] || []).slice()
+        .sort(function(a, b) { return toDateStr(a.Fecha) < toDateStr(b.Fecha) ? -1 : 1; })
+        .forEach(function(c) {
+          resultado.push({ tipo: 'cobro', fila: _subfilaCobro(c) });
+        });
+    });
+  });
+
+  // Asegurar que la hoja tiene filas suficientes
+  var totalFilas = resultado.length;
+  if (totalFilas + 1 > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), totalFilas + 1 - sheet.getMaxRows());
+  }
+
+  // Guardar Hilldun_Decision antes de limpiar (col fuera de PEDIDOS_NUM_COLS, solo en filas principales)
+  var hdrsStr       = headerRow.map(function(h) { return String(h || '').trim(); });
+  var hilldunDecCol = hdrsStr.indexOf('Hilldun_Decision'); // 0-based; -1 si no existe
+  var decisionMap   = {};
+  if (hilldunDecCol !== -1) {
+    allData.forEach(function(row) {
+      var id  = String(row[0] || '').trim();
+      var val = row[hilldunDecCol];
+      if (id && val !== '' && val !== null && val !== undefined) decisionMap[id] = val;
+    });
+  }
+
+  // Limpiar contenido y formato de filas de datos
+  sheet.getRange(2, 1, lastRow - 1, maxSheetCols).clearContent().clearFormat();
+
+  // Escribir todo en bloque
+  var matrix = resultado.map(function(item) { return item.fila; });
+  sheet.getRange(2, 1, totalFilas, PEDIDOS_NUM_COLS).setValues(matrix);
+
+  // Eliminar filas sobrantes
+  if (lastRow - 1 > totalFilas) {
+    sheet.deleteRows(totalFilas + 2, lastRow - 1 - totalFilas);
+  }
+
+  // Formato en bloque con getRangeList (una sola llamada por tipo)
+  var cobroA1 = [], facturaA1 = [], importeA1 = [], totalA1 = [];
+  resultado.forEach(function(item, i) {
+    var r = i + 2;
+    if (item.tipo === 'cobro')    cobroA1.push('A' + r + ':K' + r);
+    if (item.tipo === 'factura')  facturaA1.push('A' + r + ':K' + r);
+    importeA1.push('G' + r);
+    if (item.tipo === 'principal') totalA1.push('J' + r);
+  });
+
+  if (cobroA1.length)   sheet.getRangeList(cobroA1).setBackground('#f0f7f0').setFontColor('#2e7d32').setFontSize(9);
+  if (facturaA1.length) sheet.getRangeList(facturaA1).setBackground('#e8f0fe').setFontColor('#1a237e').setFontSize(9);
+  if (importeA1.length) sheet.getRangeList(importeA1).setNumberFormat('#,##0.00');
+  if (totalA1.length)   sheet.getRangeList(totalA1).setNumberFormat('#,##0.00');
+
+  // Restaurar Hilldun_Decision en las nuevas posiciones de filas principales
+  if (hilldunDecCol !== -1 && Object.keys(decisionMap).length > 0) {
+    var newIds    = sheet.getRange(2, 1, totalFilas, 1).getValues();
+    var decValues = newIds.map(function(row) {
+      var id = String(row[0] || '').trim();
+      return [id && decisionMap.hasOwnProperty(id) ? decisionMap[id] : ''];
+    });
+    sheet.getRange(2, hilldunDecCol + 1, totalFilas, 1).setValues(decValues);
+  }
+}
+
+function _subfilaCobro(cobro) {
+  var f = ['', '', '', '', '', '', '', '', '', '', ''];
+  f[1] = '  ↳ Cobro';
+  f[2] = String(cobro.ID_Odoo || '');
+  f[4] = toDateStr(cobro.Fecha);
+  f[5] = String(cobro.Moneda || 'EUR');
+  f[6] = parseFloat(cobro.Importe) || 0;
+  return f;
+}
+
+function _subfilaFactura(factura) {
+  var f = ['', '', '', '', '', '', '', '', '', '', ''];
+  f[1] = '  ↳ Factura';
+  f[2] = String(factura.Numero || '');
+  f[4] = toDateStr(factura.Fecha);
+  f[5] = String(factura.Moneda || 'EUR');
+  f[6] = parseFloat(factura.Importe) || 0;
+  f[7] = toDateStr(factura.Vencimiento);
+  return f;
+}
+
+// Migración: añade las columnas nuevas de Facturas si no existen todavía.
+// Si Ultima_Actualizacion está al final, inserta antes de ella; si no, añade al final.
+function _asegurarColumnasFacturas() {
+  var ss    = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAMES.FACTURAS);
+  if (!sheet || sheet.getLastColumn() < 1) return;
+
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+    .map(function(h) { return String(h || '').trim(); });
+
+  var needed  = ['Tracking_DHL', 'Tracking_Seguimiento', 'Tracking_Envio', 'Modo_Pago', 'Hilldun_Enviada'];
+  var missing = needed.filter(function(h) { return headers.indexOf(h) === -1; });
+  if (missing.length === 0) return;
+
+  var ultimaIdx = headers.indexOf('Ultima_Actualizacion');
+  var ultimaEsUltima = ultimaIdx !== -1 && ultimaIdx === headers.length - 1;
+
+  if (ultimaEsUltima) {
+    // Insertar antes de Ultima_Actualizacion (1-based col)
+    var insertCol = ultimaIdx + 1;
+    sheet.insertColumnsBefore(insertCol, missing.length);
+    missing.forEach(function(nombre, i) {
+      sheet.getRange(1, insertCol + i)
+        .setValue(nombre)
+        .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+      sheet.setColumnWidth(insertCol + i, nombre === 'Modo_Pago' ? 120 : 150);
+    });
+  } else {
+    // Añadir al final
+    missing.forEach(function(nombre) {
+      var col = sheet.getLastColumn() + 1;
+      sheet.getRange(1, col)
+        .setValue(nombre)
+        .setBackground('#1a1a2e').setFontColor('#ffffff').setFontWeight('bold');
+      sheet.setColumnWidth(col, nombre === 'Modo_Pago' ? 120 : 150);
+    });
+  }
+}
+
+// ============================================================
+// Diagnóstico de factura — por qué no aparece en el informe
+// Accesible desde el menú: Validar datos → Diagnosticar factura
+// ============================================================
+
+function diagnosticarFactura() {
+  var ui   = SpreadsheetApp.getUi();
+  var resp = ui.prompt(
+    'Diagnosticar factura',
+    'Introduce el número de factura exacto (ej: INV/2026/000312):',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  var numero = resp.getResponseText().trim();
+  if (!numero) return;
+
+  var datos;
+  try { datos = cargarTodosLosDatos(); } catch(e) {
+    ui.alert('Error', e.message, ui.ButtonSet.OK); return;
+  }
+
+  var lineas = ['=== DIAGNÓSTICO: ' + numero + ' ===\n'];
+
+  // 1. Buscar la factura
+  var factura = null;
+  datos.facturas.forEach(function(f) {
+    if (String(f.Numero || '').trim() === numero) factura = f;
+  });
+
+  if (!factura) {
+    // Buscar aproximado (case-insensitive)
+    var numLower = numero.toLowerCase();
+    datos.facturas.forEach(function(f) {
+      if (String(f.Numero || '').trim().toLowerCase() === numLower) factura = f;
+    });
+    if (factura) {
+      lineas.push('⚠️ Factura encontrada solo por coincidencia case-insensitive.');
+      lineas.push('   Numero en hoja: "' + String(factura.Numero || '') + '"');
+      lineas.push('   Numero buscado: "' + numero + '"');
+    } else {
+      lineas.push('❌ Factura NO encontrada en la hoja Facturas.');
+      ui.alert('Diagnóstico', lineas.join('\n'), ui.ButtonSet.OK); return;
+    }
+  } else {
+    lineas.push('✅ Factura encontrada.');
+  }
+
+  var importeFactura = parseFloat(factura.Importe) || 0;
+  var pedidoRef      = String(factura.Pedidos_Ref || '').trim();
+  lineas.push('   Importe: ' + importeFactura + '  Moneda: ' + factura.Moneda);
+  lineas.push('   Pedidos_Ref: "' + pedidoRef + '"');
+  lineas.push('   Cliente: "' + String(factura.Cliente_Nombre || '') + '"');
+  lineas.push('   Es_Abono: ' + factura.Es_Abono);
+
+  // 2. Cobros directos por Factura_Ref
+  var cobrosDirectos = datos.cobros.filter(function(c) {
+    return String(c.Factura_Ref || '').trim() === String(factura.Numero || '').trim();
+  });
+  lineas.push('\n--- Cobros con Factura_Ref = "' + numero + '": ' + cobrosDirectos.length);
+  cobrosDirectos.forEach(function(c) {
+    lineas.push('   ' + toDateStr(c.Fecha) + '  ' + c.Importe + '  ID: ' + c.ID_Odoo);
+  });
+
+  // 3. Cobros por Pedido_Ref (anticipos, Factura_Ref vacío)
+  var cobrosAnticipo = pedidoRef
+    ? datos.cobros.filter(function(c) {
+        return !String(c.Factura_Ref || '').trim() &&
+               String(c.Pedido_Ref || '').trim() === pedidoRef;
+      })
+    : [];
+  lineas.push('\n--- Cobros anticipo con Pedido_Ref = "' + pedidoRef + '": ' + cobrosAnticipo.length);
+  cobrosAnticipo.forEach(function(c) {
+    lineas.push('   ' + toDateStr(c.Fecha) + '  ' + c.Importe + '  ID: ' + c.ID_Odoo);
+  });
+
+  // Cobros con Pedido_Ref distinto al de la factura (posible anticipo cruzado)
+  var cobrosOtrosPedidos = datos.cobros.filter(function(c) {
+    var fRef = String(c.Factura_Ref || '').trim();
+    var pRef = String(c.Pedido_Ref  || '').trim();
+    return fRef === numero && pRef && pRef !== pedidoRef;
+  });
+  if (cobrosOtrosPedidos.length > 0) {
+    lineas.push('\n--- Cobros vinculados a esta factura con Pedido_Ref DIFERENTE: ' + cobrosOtrosPedidos.length);
+    cobrosOtrosPedidos.forEach(function(c) {
+      lineas.push('   ' + toDateStr(c.Fecha) + '  ' + c.Importe + '  Pedido: ' + c.Pedido_Ref);
+    });
+  }
+
+  // 4. Acumulado
+  var pagos = cobrosDirectos.concat(cobrosAnticipo).map(function(c) {
+    return { fecha: toDateStr(c.Fecha), importe: parseFloat(c.Importe) || 0 };
+  }).sort(function(a, b) { return a.fecha < b.fecha ? -1 : 1; });
+
+  var acumulado = 0, fechaCobro100 = null;
+  var umbral = calcularUmbral(importeFactura);
+  pagos.forEach(function(p) {
+    if (!fechaCobro100) {
+      acumulado += p.importe;
+      if (acumulado >= importeFactura - umbral) fechaCobro100 = p.fecha;
+    }
+  });
+
+  lineas.push('\n--- Cálculo');
+  lineas.push('   Importe:    ' + importeFactura);
+  lineas.push('   Umbral:     ' + umbral + ' (residual tolerable)');
+  lineas.push('   Acumulado:  ' + redondear2(acumulado));
+  lineas.push('   Pendiente:  ' + redondear2(importeFactura - acumulado));
+  lineas.push('   Cobrada100: ' + (fechaCobro100 || 'NO — no alcanza el 100%'));
+
+  // 5. Cliente y showroom
+  var nombreCliente = String(factura.Cliente_Nombre || '').trim();
+  var clientesPorNombre = groupBy(datos.clientes, 'Nombre');
+  var clientesFactura = clientesPorNombre[nombreCliente] || [];
+  lineas.push('\n--- Cliente "' + nombreCliente + '": ' + clientesFactura.length + ' entrada(s) en Clientes');
+  clientesFactura.forEach(function(c) {
+    lineas.push('   Showroom: "' + c.Showroom_Nombre + '"');
+  });
+
+  // 6. Cobros con Factura_Ref similar (buscar posibles typos)
+  var cobrosConRef = datos.cobros.filter(function(c) {
+    return String(c.Factura_Ref || '').trim() !== '';
+  });
+  var candidatosCercanos = cobrosConRef.filter(function(c) {
+    var ref = String(c.Factura_Ref || '').trim().toLowerCase();
+    return ref.indexOf('000312') !== -1 || ref.indexOf('000315') !== -1;
+  });
+  if (candidatosCercanos.length > 0) {
+    lineas.push('\n--- Cobros con Factura_Ref que contiene el número (posibles coincidencias):');
+    candidatosCercanos.forEach(function(c) {
+      lineas.push('   Factura_Ref: "' + c.Factura_Ref + '"  Importe: ' + c.Importe);
+    });
+  }
+
+  Logger.log(lineas.join('\n'));
+  ui.alert('Diagnóstico: ' + numero, lineas.join('\n'), ui.ButtonSet.OK);
+}
+
+// ============================================================
+// Limpieza de duplicados
+// Elimina filas con ID_Odoo/Numero repetido en Facturas, Cobros
+// y Pedidos, conservando la fila con Ultima_Actualizacion más
+// reciente. En Pedidos reconstruye las sub-filas al terminar.
+// ============================================================
+
+function limpiarDuplicados() {
+  var ui   = SpreadsheetApp.getUi();
+  var resp = ui.alert(
+    'Limpiar duplicados',
+    'Busca filas duplicadas (mismo ID/Numero) en Facturas, Cobros y Pedidos.\n\n' +
+    'Cuando hay dos filas con el mismo ID se conserva la mas reciente.\n\n' +
+    'Continuar?',
+    ui.ButtonSet.YES_NO
+  );
+  if (resp !== ui.Button.YES) return;
+
+  var ss      = SpreadsheetApp.getActiveSpreadsheet();
+  var resumen = [];
+  var reconstruirPedidos = false;
+
+  [SHEET_NAMES.FACTURAS, SHEET_NAMES.COBROS, SHEET_NAMES.PEDIDOS].forEach(function(nombre) {
+    var sheet = ss.getSheetByName(nombre);
+    if (!sheet || sheet.getLastRow() < 2) {
+      resumen.push(nombre + ': sin datos');
+      return;
+    }
+
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                      .map(function(h) { return String(h || '').trim(); });
+    var ultIdx  = headers.indexOf('Ultima_Actualizacion'); // 0-based, -1 si no existe
+
+    var lastRow = sheet.getLastRow();
+    var allData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+    // Solo filas principales (col0 no vacío — las sub-filas de Pedidos tienen col0 vacío)
+    var principales = allData.filter(function(row) {
+      return String(row[0] || '').trim() !== '';
+    });
+
+    // Para cada ID, quedarse con la fila de Ultima_Actualizacion más reciente
+    var mejorPorId = {};
+    principales.forEach(function(row) {
+      var id = String(row[0] || '').trim();
+      if (!mejorPorId[id]) {
+        mejorPorId[id] = row;
+      } else {
+        var fechaActual = ultIdx !== -1 ? mejorPorId[id][ultIdx] : null;
+        var fechaNueva  = ultIdx !== -1 ? row[ultIdx]            : null;
+        if (fechaNueva && fechaActual && fechaNueva > fechaActual) {
+          mejorPorId[id] = row;
+        }
+      }
+    });
+
+    var numDuplicados = principales.length - Object.keys(mejorPorId).length;
+
+    if (numDuplicados === 0) {
+      resumen.push(nombre + ': sin duplicados');
+      return;
+    }
+
+    // Reconstruir la lista en el orden de primera aparición, usando la versión más reciente
+    var vistos     = {};
+    var filasUnicas = [];
+    principales.forEach(function(row) {
+      var id = String(row[0] || '').trim();
+      if (!vistos[id]) {
+        vistos[id] = true;
+        filasUnicas.push(mejorPorId[id]);
+      }
+    });
+
+    // Limpiar hoja y reescribir sin duplicados
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent().clearFormat();
+    sheet.getRange(2, 1, filasUnicas.length, lastCol).setValues(filasUnicas);
+
+    // Eliminar filas vacías sobrantes
+    var filaFin = filasUnicas.length + 2;
+    if (sheet.getMaxRows() >= filaFin) {
+      var sobran = sheet.getMaxRows() - filaFin + 1;
+      if (sobran > 0) sheet.deleteRows(filaFin, sobran);
+    }
+
+    if (nombre === SHEET_NAMES.PEDIDOS) reconstruirPedidos = true;
+
+    resumen.push(nombre + ': ' + numDuplicados + ' duplicado(s) eliminado(s)');
+  });
+
+  // Reconstruir sub-filas de Pedidos si se limpiaron duplicados en esa hoja
+  if (reconstruirPedidos) {
+    try {
+      actualizarResumenPedidos();
+      resumen.push('Pedidos: sub-filas reconstruidas correctamente');
+    } catch(e) {
+      resumen.push('Pedidos: error al reconstruir sub-filas - ' + e.message);
+    }
+  }
+
+  // Limpiar Clientes por clave compuesta Nombre|Showroom_Nombre
+  (function() {
+    var nombre = SHEET_NAMES.CLIENTES;
+    var sheet  = ss.getSheetByName(nombre);
+    if (!sheet || sheet.getLastRow() < 2) { resumen.push(nombre + ': sin datos'); return; }
+
+    var lastCol = sheet.getLastColumn();
+    var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0]
+                      .map(function(h) { return String(h || '').trim(); });
+    var nombreIdx    = headers.indexOf('Nombre');
+    var showroomIdx  = headers.indexOf('Showroom_Nombre');
+    var ultIdx       = headers.indexOf('Ultima_Actualizacion');
+    if (nombreIdx === -1 || showroomIdx === -1) { resumen.push(nombre + ': columnas no encontradas'); return; }
+
+    var lastRow = sheet.getLastRow();
+    var allData = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+    var mejorPorClave = {};
+    allData.forEach(function(row) {
+      var clave = String(row[nombreIdx] || '').trim() + '|' + String(row[showroomIdx] || '').trim();
+      if (!clave || clave === '|') return;
+      if (!mejorPorClave[clave]) {
+        mejorPorClave[clave] = row;
+      } else {
+        var fechaActual = ultIdx !== -1 ? mejorPorClave[clave][ultIdx] : null;
+        var fechaNueva  = ultIdx !== -1 ? row[ultIdx] : null;
+        if (fechaNueva && fechaActual && fechaNueva > fechaActual) {
+          mejorPorClave[clave] = row;
+        }
+      }
+    });
+
+    var numDuplicados = allData.length - Object.keys(mejorPorClave).length;
+    if (numDuplicados === 0) { resumen.push(nombre + ': sin duplicados'); return; }
+
+    var vistos = {};
+    var filasUnicas = [];
+    allData.forEach(function(row) {
+      var clave = String(row[nombreIdx] || '').trim() + '|' + String(row[showroomIdx] || '').trim();
+      if (!clave || clave === '|' || vistos[clave]) return;
+      vistos[clave] = true;
+      filasUnicas.push(mejorPorClave[clave]);
+    });
+
+    sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent().clearFormat();
+    sheet.getRange(2, 1, filasUnicas.length, lastCol).setValues(filasUnicas);
+    var filaFin = filasUnicas.length + 2;
+    if (sheet.getMaxRows() >= filaFin) {
+      var sobran = sheet.getMaxRows() - filaFin + 1;
+      if (sobran > 0) sheet.deleteRows(filaFin, sobran);
+    }
+    resumen.push(nombre + ': ' + numDuplicados + ' duplicado(s) eliminado(s)');
+  })();
+
+  ui.alert('Limpieza completada', resumen.join('\n'), ui.ButtonSet.OK);
+}
